@@ -1,0 +1,177 @@
+/* VinFlux Side Drawer & Overlay System */
+
+.vf-drawer-overlay,
+.vf-drawer-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(2px);
+  z-index: 9999 !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: stretch !important;
+  overflow: hidden !important;
+  animation: vfDrawerFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vf-drawer {
+  position: relative !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  background: #ffffff !important;
+  box-shadow: -8px 0 36px rgba(15, 23, 42, 0.22) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  animation: vfDrawerSlideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Width specifications */
+.vf-drawer-sm {
+  width: 460px;
+  max-width: 92vw;
+}
+
+.vf-drawer-md {
+  width: 620px;
+  max-width: 94vw;
+}
+
+.vf-drawer-lg {
+  width: 780px;
+  max-width: 95vw;
+}
+
+.vf-drawer-xl {
+  width: 880px;
+  max-width: 96vw;
+}
+
+.vf-drawer-2xl {
+  width: 980px;
+  max-width: 98vw;
+}
+
+/* Header */
+.vf-drawer-header {
+  padding: 18px 24px;
+  background-color: #ffffff;
+  border-bottom: 1px solid var(--vf-slate-200);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.vf-drawer-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vf-drawer-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--vf-slate-900);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vf-drawer-subtitle {
+  font-size: 12px;
+  color: var(--vf-slate-500);
+  margin: 0;
+}
+
+.vf-drawer-close {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vf-slate-400);
+  cursor: pointer;
+  font-size: 20px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.vf-drawer-close:hover {
+  background-color: var(--vf-slate-100);
+  color: var(--vf-slate-700);
+  border-color: var(--vf-slate-200);
+}
+
+/* Body */
+.vf-drawer-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 24px;
+  box-sizing: border-box;
+  background-color: #ffffff;
+}
+
+.vf-drawer-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.vf-drawer-body::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.vf-drawer-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.vf-drawer-body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Footer */
+.vf-drawer-footer {
+  padding: 16px 24px;
+  background-color: #f8fafc;
+  border-top: 1px solid var(--vf-slate-200);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.03);
+  z-index: 10;
+}
+
+/* Animation Keyframes */
+@keyframes vfDrawerFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vfDrawerSlideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Ensure no modal overlays or backdrops are accidentally suppressed */
+.vf-modal-overlay,
+.vf-modal-backdrop {
+  display: flex !important;
+}
