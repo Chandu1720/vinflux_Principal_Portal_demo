@@ -92,6 +92,46 @@ export const Sidebar: React.FC = () => {
         {/* Go-to-Market Group */}
         <div className="vf-nav-section">
           <div className="vf-nav-heading">Go-to-market</div>
+
+          {/* GTM V2 Enterprise Link */}
+          <button
+            type="button"
+            className="vf-nav-item"
+            onClick={() => navigate('/gtm-v2')}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              background: '#EDE9FE',
+              border: '1px solid #DDD6FE',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '7px 10px',
+              marginBottom: '6px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <svg className="vf-nav-icon" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2.5">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              <span style={{ fontWeight: 700, color: '#7C3AED', fontSize: '12.5px' }}>GTM V2 (Enterprise)</span>
+            </div>
+            <span
+              style={{
+                fontSize: '9.5px',
+                fontWeight: 800,
+                backgroundColor: '#7C3AED',
+                color: '#FFFFFF',
+                padding: '1px 5px',
+                borderRadius: '4px'
+              }}
+            >
+              V2
+            </span>
+          </button>
+
           <button
             type="button"
             className={`vf-nav-item ${isGtm ? 'active' : ''}`}
