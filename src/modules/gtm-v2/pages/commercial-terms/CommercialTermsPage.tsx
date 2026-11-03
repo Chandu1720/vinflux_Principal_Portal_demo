@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type { CommercialTermEntry, CommercialTermProvenance } from '../../types/gtmV2.types';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 
 export const CommercialTermsPage: React.FC = () => {
   const {
@@ -352,15 +352,15 @@ export const CommercialTermsPage: React.FC = () => {
       </div>
 
       {/* -------------------------------------------------------------------- */}
-      {/* DEVIATION REQUEST MODAL */}
+      {/* DEVIATION REQUEST DRAWER */}
       {/* -------------------------------------------------------------------- */}
       {isOverrideModalOpen && editingEntry && (
-        <Modal
+        <SideDrawer
           isOpen={isOverrideModalOpen}
           onClose={() => setIsOverrideModalOpen(false)}
           title={`Commercial Deviation Request: ${editingEntry.partnerName}`}
           subtitle={`Current Term: ${editingEntry.approvedDiscount}% Discount • ${editingEntry.creditPeriodDays} Days`}
-          maxWidth="md"
+          size="md"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '8px', padding: '12px', display: 'flex', gap: '10px' }}>
@@ -457,7 +457,7 @@ export const CommercialTermsPage: React.FC = () => {
               </button>
             </div>
           </div>
-        </Modal>
+        </SideDrawer>
       )}
     </div>
   );

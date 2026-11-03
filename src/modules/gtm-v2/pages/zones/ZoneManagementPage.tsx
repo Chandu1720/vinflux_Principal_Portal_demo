@@ -11,7 +11,7 @@ import {
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type { Zone } from '../../types/gtmV2.types';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { HierarchicalTreeSelect } from '../../components/common/HierarchicalTreeSelect';
 
@@ -374,13 +374,13 @@ export const ZoneManagementPage: React.FC = () => {
         })}
       </div>
 
-      {/* CREATE / EDIT ZONE MODAL */}
-      <Modal
+      {/* CREATE / EDIT ZONE DRAWER */}
+      <SideDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         title={editingZone ? `Edit Zone: ${editingZone.name}` : 'Configure New Zone'}
         subtitle="Group multiple territories across states into regional operational zones."
-        maxWidth="lg"
+        size="md"
         footer={
           <>
             <button
@@ -568,7 +568,7 @@ export const ZoneManagementPage: React.FC = () => {
             />
           </div>
         </form>
-      </Modal>
+      </SideDrawer>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog

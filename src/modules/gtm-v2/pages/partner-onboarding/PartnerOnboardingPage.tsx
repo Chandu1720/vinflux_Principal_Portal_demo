@@ -10,7 +10,7 @@ import {
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type { PartnerOnboardingRecord, OnboardingStatus, KycDocStatus } from '../../types/gtmV2.types';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 import { OnboardingWizardModal } from './OnboardingWizardModal';
 
 export const PartnerOnboardingPage: React.FC = () => {
@@ -384,15 +384,15 @@ export const PartnerOnboardingPage: React.FC = () => {
       </div>
 
       {/* -------------------------------------------------------------------- */}
-      {/* PARTNER PROFILE & KYC DOSSIER MODAL */}
+      {/* PARTNER PROFILE & KYC DOSSIER DRAWER */}
       {/* -------------------------------------------------------------------- */}
       {viewPartner && (
-        <Modal
+        <SideDrawer
           isOpen={!!viewPartner}
           onClose={() => setViewPartner(null)}
           title={`Partner Dossier: ${viewPartner.name}`}
           subtitle={`Code: ${viewPartner.code} • GSTIN: ${viewPartner.gstin}`}
-          maxWidth="2xl"
+          size="lg"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Header Ribbon */}
@@ -561,7 +561,7 @@ export const PartnerOnboardingPage: React.FC = () => {
               </button>
             </div>
           </div>
-        </Modal>
+        </SideDrawer>
       )}
 
       {/* -------------------------------------------------------------------- */}

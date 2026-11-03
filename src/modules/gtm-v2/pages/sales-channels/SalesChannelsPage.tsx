@@ -12,7 +12,7 @@ import {
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type { SalesChannel } from '../../types/gtmV2.types';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 const COMMON_PAYMENT_MODES = [
@@ -451,13 +451,13 @@ export const SalesChannelsPage: React.FC = () => {
         ))}
       </div>
 
-      {/* CREATE / EDIT CHANNEL MODAL WITH CONDITIONAL FIELDS */}
-      <Modal
+      {/* CREATE / EDIT CHANNEL DRAWER WITH CONDITIONAL FIELDS */}
+      <SideDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         title={editingChannel ? `Configure Channel: ${editingChannel.name}` : 'Create Dynamic Sales Channel'}
         subtitle="Establish commercial terms, statutory margins, credit periods, and security requirements."
-        maxWidth="xl"
+        size="lg"
         footer={
           <>
             <button
@@ -806,15 +806,15 @@ export const SalesChannelsPage: React.FC = () => {
             </div>
           )}
         </form>
-      </Modal>
+      </SideDrawer>
 
-      {/* CONFIGURATION HISTORY MODAL */}
-      <Modal
+      {/* CONFIGURATION HISTORY SIDE DRAWER */}
+      <SideDrawer
         isOpen={Boolean(historyChannel)}
         onClose={() => setHistoryChannel(null)}
         title={`Configuration Audit Log: ${historyChannel?.name}`}
         subtitle="Chronological trail of commercial modifications, DSO terms, and credit limits."
-        maxWidth="md"
+        size="md"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {(historyChannel?.configHistory || []).length === 0 ? (
@@ -851,7 +851,7 @@ export const SalesChannelsPage: React.FC = () => {
             ))
           )}
         </div>
-      </Modal>
+      </SideDrawer>
 
       {/* DELETE CONFIRM DIALOG */}
       <ConfirmDialog

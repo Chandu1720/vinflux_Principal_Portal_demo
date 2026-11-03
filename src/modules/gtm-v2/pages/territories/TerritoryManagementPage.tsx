@@ -13,7 +13,7 @@ import {
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type { TerritoryNode } from '../../types/gtmV2.types';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 export const TerritoryManagementPage: React.FC = () => {
@@ -770,14 +770,14 @@ export const TerritoryManagementPage: React.FC = () => {
       </div>
 
       {/* -------------------------------------------------------------------- */}
-      {/* CREATE / EDIT TERRITORY MODAL */}
+      {/* CREATE / EDIT TERRITORY DRAWER */}
       {/* -------------------------------------------------------------------- */}
-      <Modal
+      <SideDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         title={editingTerritory ? `Edit Territory: ${editingTerritory.name}` : 'Configure New Territory'}
         subtitle="Dynamic N-level hierarchy node with circular relationship safeguards."
-        maxWidth="md"
+        size="md"
         footer={
           <>
             <button
@@ -1000,7 +1000,7 @@ export const TerritoryManagementPage: React.FC = () => {
             />
           </div>
         </form>
-      </Modal>
+      </SideDrawer>
 
       {/* -------------------------------------------------------------------- */}
       {/* DELETE CONFIRM DIALOG */}

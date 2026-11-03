@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type { ApprovalRequest, ApprovalRequestStatus } from '../../types/gtmV2.types';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 
 export const ApprovalsPage: React.FC = () => {
   const { approvals, approveRequest, rejectRequest } = useGtmV2();
@@ -337,10 +337,10 @@ export const ApprovalsPage: React.FC = () => {
       </div>
 
       {/* -------------------------------------------------------------------- */}
-      {/* AUDIT & DECISION MODAL */}
+      {/* AUDIT & DECISION DRAWER */}
       {/* -------------------------------------------------------------------- */}
       {selectedRequest && (
-        <Modal
+        <SideDrawer
           isOpen={!!selectedRequest}
           onClose={() => {
             setSelectedRequest(null);
@@ -348,7 +348,7 @@ export const ApprovalsPage: React.FC = () => {
           }}
           title={`Approval Audit: ${selectedRequest.requestType}`}
           subtitle={`Partner: ${selectedRequest.partnerName} (${selectedRequest.partnerCode})`}
-          maxWidth="lg"
+          size="lg"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '14px' }}>
@@ -461,7 +461,7 @@ export const ApprovalsPage: React.FC = () => {
               </div>
             )}
           </div>
-        </Modal>
+        </SideDrawer>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Workflow,
   Plus,
@@ -11,12 +11,13 @@ import {
   MapPin,
   Globe2,
   Package,
-  Copy
+  Copy,
+  Check
 } from 'lucide-react';
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type { SalesFlowTopology, SalesFlowStage, ProductScopeConfig, ActiveStatus } from '../../types/gtmV2.types';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { HierarchicalTreeSelect } from '../../components/common/HierarchicalTreeSelect';
 import { initialPortfolios, initialProducts } from '../../../../data/productMasterData';
@@ -42,6 +43,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
     salesFlows,
     salesChannels,
     territories,
+    zones,
     addSalesFlow,
     updateSalesFlow,
     deleteSalesFlow
@@ -89,6 +91,52 @@ export const SalesFlowTopologyPage: React.FC = () => {
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [selectedZoneIdForFilter, setSelectedZoneIdForFilter] = useState<string>('');
+
+  const selectedZoneObj = zones.find((z) => z.id === selectedZoneIdForFilter);
+  const availableZoneTerritories = useMemo(() => {
+    if (!selectedZoneObj) return [];
+    return territories.filter((t) => selectedZoneObj.territoryIds.includes(t.id));
+  }, [selectedZoneObj, territories]);
+
+  const handleSelectAllZoneTerritories = () => {
+    if (!selectedZoneObj) return;
+    const newTerritoryIds = Array.from(new Set([...formData.applicableTerritoryIds, ...selectedZoneObj.territoryIds]));
+    const newZoneIds = Array.from(new Set([...formData.applicableZoneIds, selectedZoneObj.id]));
+    setFormData((p) => ({
+      ...p,
+      applicableTerritoryIds: newTerritoryIds,
+      applicableZoneIds: newZoneIds
+    }));
+  };
+
+  const handleDeselectAllZoneTerritories = () => {
+    if (!selectedZoneObj) return;
+    const newTerritoryIds = formData.applicableTerritoryIds.filter((id) => !selectedZoneObj.territoryIds.includes(id));
+    const newZoneIds = formData.applicableZoneIds.filter((id) => id !== selectedZoneObj.id);
+    setFormData((p) => ({
+      ...p,
+      applicableTerritoryIds: newTerritoryIds,
+      applicableZoneIds: newZoneIds
+    }));
+  };
+
+  const handleToggleZoneTerritory = (tId: string) => {
+    const isPresent = formData.applicableTerritoryIds.includes(tId);
+    const updated = isPresent
+      ? formData.applicableTerritoryIds.filter((id) => id !== tId)
+      : [...formData.applicableTerritoryIds, tId];
+
+    let updatedZones = [...formData.applicableZoneIds];
+    if (selectedZoneObj && !isPresent && !updatedZones.includes(selectedZoneObj.id)) {
+      updatedZones.push(selectedZoneObj.id);
+    }
+    setFormData((p) => ({
+      ...p,
+      applicableTerritoryIds: updated,
+      applicableZoneIds: updatedZones
+    }));
+  };
 
   const filteredFlows = salesFlows.filter(
     (f) =>
@@ -705,13 +753,14 @@ export const SalesFlowTopologyPage: React.FC = () => {
       </div>
 
       {/* -------------------------------------------------------------------- */}
-      {/* CREATE / EDIT MODAL WITH VISUAL STAGE BUILDER */}
+      {/* CREATE / EDIT DRAWER WITH VISUAL STAGE BUILDER */}
       {/* -------------------------------------------------------------------- */}
-      <Modal
+      <SideDrawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingFlow ? `Edit Topology: ${editingFlow.name}` : 'Create New Sales Flow Topology'}
-        maxWidth="2xl"
+        subtitle="Configure fulfillment stages, zone-filtered territories, and product catalog scope"
+        size="xl"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Basic Metadata */}
@@ -1113,6 +1162,163 @@ export const SalesFlowTopologyPage: React.FC = () => {
             )}
           </div>
 
+          {/* ------------------------------------------------------------------ */}
+          {/* ZONE-BASED TERRITORY SELECTION */}
+          {/* ------------------------------------------------------------------ */}
+          <div style={{ border: '1px solid #E2E8F0', borderRadius: '8px', padding: '16px', backgroundColor: '#F8FAFC' }}>
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                Zone-Based Territory Discovery & Quick Assignment
+              </label>
+              <span style={{ fontSize: '12px', color: '#64748B' }}>
+                Select a commercial zone below to preview and assign all territories governed by that zone.
+              </span>
+            </div>
+
+            {/* Zone Buttons */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedZoneIdForFilter('')}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: selectedZoneIdForFilter === '' ? '1.5px solid #7C3AED' : '1px solid #CBD5E1',
+                  backgroundColor: selectedZoneIdForFilter === '' ? '#EDE9FE' : '#FFFFFF',
+                  color: selectedZoneIdForFilter === '' ? '#7C3AED' : '#475569'
+                }}
+              >
+                All Zones (No Filter)
+              </button>
+              {zones.map((zone) => {
+                const isSelectedZone = selectedZoneIdForFilter === zone.id;
+                const zoneTerritoryCount = zone.territoryIds.length;
+                return (
+                  <button
+                    key={zone.id}
+                    type="button"
+                    onClick={() => setSelectedZoneIdForFilter(zone.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: isSelectedZone ? '1.5px solid #7C3AED' : '1px solid #CBD5E1',
+                      backgroundColor: isSelectedZone ? '#EDE9FE' : '#FFFFFF',
+                      color: isSelectedZone ? '#7C3AED' : '#475569'
+                    }}
+                  >
+                    <span>{zone.name}</span>
+                    <span
+                      style={{
+                        fontSize: '10.5px',
+                        backgroundColor: isSelectedZone ? '#7C3AED' : '#F1F5F9',
+                        color: isSelectedZone ? '#FFFFFF' : '#64748B',
+                        padding: '1px 6px',
+                        borderRadius: '9999px'
+                      }}
+                    >
+                      {zoneTerritoryCount} territories
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Available Territories in Selected Zone */}
+            {selectedZoneObj && (
+              <div
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: '8px',
+                  padding: '12px 14px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#0F172A' }}>
+                    Available Territories in <strong>{selectedZoneObj.name}</strong> ({availableZoneTerritories.length} Territories)
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllZoneTerritories}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid #7C3AED',
+                        backgroundColor: '#F5F3FF',
+                        color: '#7C3AED',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      + Select All in {selectedZoneObj.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllZoneTerritories}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid #CBD5E1',
+                        backgroundColor: '#FFFFFF',
+                        color: '#64748B',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Deselect All in Zone
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {availableZoneTerritories.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: '#94A3B8' }}>No territories mapped to this zone yet.</div>
+                  ) : (
+                    availableZoneTerritories.map((t) => {
+                      const isAssigned = formData.applicableTerritoryIds.includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => handleToggleZoneTerritory(t.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '5px 10px',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            cursor: 'pointer',
+                            border: isAssigned ? '1.5px solid #10B981' : '1px solid #CBD5E1',
+                            backgroundColor: isAssigned ? '#ECFDF5' : '#F8FAFC',
+                            color: isAssigned ? '#065F46' : '#334155',
+                            fontWeight: isAssigned ? 700 : 500
+                          }}
+                        >
+                          <span>{t.name}</span>
+                          <span style={{ fontSize: '10px', color: isAssigned ? '#059669' : '#94A3B8' }}>({t.code})</span>
+                          {isAssigned && <Check size={12} color="#10B981" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Territory Multi-Select */}
           <div>
             <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
@@ -1161,7 +1367,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
             </button>
           </div>
         </div>
-      </Modal>
+      </SideDrawer>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog

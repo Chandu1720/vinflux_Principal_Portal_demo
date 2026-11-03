@@ -12,7 +12,9 @@ import {
   ShieldCheck,
   AlertTriangle,
   Upload,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { useGtmV2 } from '../../context/GtmV2Context';
 import type {
@@ -21,7 +23,7 @@ import type {
   PartnerCommercialOverride,
   OnboardingStatus
 } from '../../types/gtmV2.types';
-import { Modal } from '../../components/common/Modal';
+import { SideDrawer } from '../../components/common/SideDrawer';
 import { HierarchicalTreeSelect } from '../../components/common/HierarchicalTreeSelect';
 
 interface OnboardingWizardModalProps {
@@ -39,6 +41,31 @@ const WIZARD_STEPS = [
   { step: 6, title: 'Commercial Terms', icon: <CreditCard size={15} /> },
   { step: 7, title: 'Review & Submit', icon: <ShieldCheck size={15} /> }
 ];
+
+// GST State Codes Map
+const GST_STATE_MAP: Record<string, string> = {
+  '01': 'Jammu & Kashmir',
+  '02': 'Himachal Pradesh',
+  '03': 'Punjab',
+  '04': 'Chandigarh',
+  '05': 'Uttarakhand',
+  '06': 'Haryana',
+  '07': 'Delhi',
+  '08': 'Rajasthan',
+  '09': 'Uttar Pradesh',
+  '10': 'Bihar',
+  '19': 'West Bengal',
+  '21': 'Odisha',
+  '22': 'Chhattisgarh',
+  '23': 'Madhya Pradesh',
+  '24': 'Gujarat',
+  '27': 'Maharashtra',
+  '29': 'Karnataka',
+  '32': 'Kerala',
+  '33': 'Tamil Nadu',
+  '36': 'Telangana',
+  '37': 'Andhra Pradesh'
+};
 
 export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
   isOpen,
@@ -59,6 +86,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
 
   // Form State
   const [partnerCode] = useState(`PTR-${new Date().getFullYear()}-${String(partners.length + 1).padStart(3, '0')}`);
+  const [gstin, setGstin] = useState('');
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [partnerType, setPartnerType] = useState('Distributor');
@@ -68,11 +96,23 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
   const [phone, setPhone] = useState('');
   const [street, setStreet] = useState('');
   const [city, setCity] = useState('');
-  const [state] = useState('Andhra Pradesh');
+  const [state, setState] = useState('Andhra Pradesh');
   const [pinCode, setPinCode] = useState('');
-  const [gstin, setGstin] = useState('');
   const [pan, setPan] = useState('');
   const [drugLicenseNo, setDrugLicenseNo] = useState('');
+
+  // GSTIN Verification State
+  const [isVerifyingGstin, setIsVerifyingGstin] = useState(false);
+  const [gstinVerifiedData, setGstinVerifiedData] = useState<{
+    legalName: string;
+    tradeName: string;
+    pan: string;
+    state: string;
+    taxpayerType: string;
+    status: string;
+    address: string;
+    pincode: string;
+  } | null>(null);
 
   // Step 2 KYC
   const [kycDocs, setKycDocs] = useState<KycDocument[]>(
@@ -115,6 +155,87 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
     (overrideDeposit !== undefined && overrideDeposit !== selectedChannel?.depositAmount);
 
   const selectedFlow = salesFlows.find((f) => f.id === selectedFlowId) || salesFlows[0];
+
+  // GSTIN Live Verification & Auto-Fill Handler
+  const handleVerifyGstin = () => {
+    const cleanGst = gstin.trim().toUpperCase();
+    if (!cleanGst || cleanGst.length !== 15) {
+      setErrors((prev) => ({
+        ...prev,
+        gstin: 'Please enter a valid 15-character GSTIN (e.g. 37AAACA1234A1Z5).'
+      }));
+      return;
+    }
+
+    setIsVerifyingGstin(true);
+    setErrors((prev) => {
+      const copy = { ...prev };
+      delete copy.gstin;
+      return copy;
+    });
+
+    // Simulate GST Portal API handshake
+    setTimeout(() => {
+      const stateCode = cleanGst.substring(0, 2);
+      const extractedPan = cleanGst.substring(2, 12);
+      const resolvedState = GST_STATE_MAP[stateCode] || 'Andhra Pradesh';
+
+      // Realistic business details based on PAN & State
+      let resolvedLegalName = 'Apex Meditech Logistics Private Limited';
+      let resolvedTradeName = 'Apex Meditech Devices';
+      let resolvedCity = 'Vijayawada';
+      let resolvedPin = '520007';
+      let resolvedStreet = 'Plot 42, APIIC Auto Nagar Industrial Park';
+
+      if (stateCode === '36') {
+        resolvedLegalName = 'Deccan Surgical & Hospital Supplies Pvt Ltd';
+        resolvedTradeName = 'Deccan Surgical';
+        resolvedCity = 'Hyderabad';
+        resolvedPin = '500034';
+        resolvedStreet = 'Road No 12, Banjara Hills Commercial Complex';
+      } else if (stateCode === '29') {
+        resolvedLegalName = 'Karnataka Healthcare Logistics & Consignment LLP';
+        resolvedTradeName = 'Karnataka Healthcare';
+        resolvedCity = 'Bengaluru';
+        resolvedPin = '560025';
+        resolvedStreet = '24/1, Richmond Road Commercial Center';
+      } else if (stateCode === '27') {
+        resolvedLegalName = 'Western Medico Distribution Private Limited';
+        resolvedTradeName = 'Western Medico';
+        resolvedCity = 'Mumbai';
+        resolvedPin = '400018';
+        resolvedStreet = 'Unit 8, Peninsula Business Park, Lower Parel';
+      } else if (stateCode === '33') {
+        resolvedLegalName = 'Southern Ortho & Surgical Supplies Private Limited';
+        resolvedTradeName = 'Southern Ortho';
+        resolvedCity = 'Chennai';
+        resolvedPin = '600006';
+        resolvedStreet = '55, Anna Salai Commercial Tower';
+      }
+
+      // Auto-fill form fields
+      setName(resolvedLegalName);
+      setBusinessName(resolvedTradeName);
+      setPan(extractedPan);
+      setState(resolvedState);
+      setCity(resolvedCity);
+      setPinCode(resolvedPin);
+      setStreet(resolvedStreet);
+
+      setGstinVerifiedData({
+        legalName: resolvedLegalName,
+        tradeName: resolvedTradeName,
+        pan: extractedPan,
+        state: resolvedState,
+        taxpayerType: 'Regular Taxpayer',
+        status: 'Active (Valid GSTN Registration)',
+        address: resolvedStreet,
+        pincode: resolvedPin
+      });
+
+      setIsVerifyingGstin(false);
+    }, 600);
+  };
 
   const validateStep = (step: number): boolean => {
     const newErrors: Record<string, string> = {};
@@ -275,12 +396,12 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
   };
 
   return (
-    <Modal
+    <SideDrawer
       isOpen={isOpen}
       onClose={onClose}
       title="Partner Onboarding Wizard"
       subtitle={`Application Code: ${partnerCode} • Enterprise Channel Governance`}
-      maxWidth="3xl"
+      size="xl"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {/* Wizard Progress Steps Bar */}
@@ -345,14 +466,114 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
         </div>
 
         {/* ------------------------------------------------------------------ */}
-        {/* STEP 1: BASIC INFORMATION */}
+        {/* STEP 1: BASIC INFORMATION WITH LIVE GSTIN VERIFICATION */}
         {/* ------------------------------------------------------------------ */}
         {currentStep === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>
-              Step 1: Legal Entity & Identity
-            </h4>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>
+                  Step 1: Statutory Identity & GSTIN Auto-Verification
+                </h4>
+                <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#64748B' }}>
+                  Verify GSTIN to auto-fetch legal registered name, trade name, PAN, and official state.
+                </p>
+              </div>
+            </div>
 
+            {/* GSTIN Verification Input Banner */}
+            <div
+              style={{
+                backgroundColor: '#F5F3FF',
+                border: '1.5px solid #DDD6FE',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#6D28D9' }}>
+                GSTIN (15 Digits) *
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="e.g. 37AAACA1234A1Z5"
+                  value={gstin}
+                  onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: `1px solid ${errors.gstin ? '#EF4444' : '#CBD5E1'}`,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    backgroundColor: '#FFFFFF'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleVerifyGstin}
+                  disabled={isVerifyingGstin}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: '#7C3AED',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 16px',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    cursor: isVerifyingGstin ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isVerifyingGstin ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} />
+                      <span>Verify & Auto-Fill</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              {errors.gstin && <div style={{ fontSize: '11px', color: '#EF4444' }}>{errors.gstin}</div>}
+
+              {/* Verified Result Banner */}
+              {gstinVerifiedData && (
+                <div
+                  style={{
+                    backgroundColor: '#DCFCE7',
+                    border: '1px solid #86EFAC',
+                    borderRadius: '6px',
+                    padding: '10px 14px',
+                    marginTop: '4px',
+                    fontSize: '12px',
+                    color: '#15803D',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                    <CheckCircle2 size={15} />
+                    <span>GSTIN Verified: {gstinVerifiedData.status}</span>
+                  </div>
+                  <div style={{ color: '#166534', fontSize: '11.5px' }}>
+                    <strong>Legal:</strong> {gstinVerifiedData.legalName} • <strong>Trade:</strong> {gstinVerifiedData.tradeName} • <strong>PAN:</strong> {gstinVerifiedData.pan} • <strong>State:</strong> {gstinVerifiedData.state}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Detailed Entity Form */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
@@ -389,6 +610,32 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
 
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                  PAN Card Number *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. AAACA1234A"
+                  value={pan}
+                  onChange={(e) => setPan(e.target.value.toUpperCase())}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: `1px solid ${errors.pan ? '#EF4444' : '#CBD5E1'}`, fontSize: '13px' }}
+                />
+                {errors.pan && <div style={{ fontSize: '11px', color: '#EF4444', marginTop: '2px' }}>{errors.pan}</div>}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                  Registered State
+                </label>
+                <input
+                  type="text"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
                   Partner Role / Classification
                 </label>
                 <select
@@ -419,34 +666,6 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
-                  GSTIN (15 Digits) *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 37AAACA1234A1Z5"
-                  value={gstin}
-                  onChange={(e) => setGstin(e.target.value.toUpperCase())}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: `1px solid ${errors.gstin ? '#EF4444' : '#CBD5E1'}`, fontSize: '13px' }}
-                />
-                {errors.gstin && <div style={{ fontSize: '11px', color: '#EF4444', marginTop: '2px' }}>{errors.gstin}</div>}
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
-                  PAN Card Number *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. AAACA1234A"
-                  value={pan}
-                  onChange={(e) => setPan(e.target.value.toUpperCase())}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: `1px solid ${errors.pan ? '#EF4444' : '#CBD5E1'}`, fontSize: '13px' }}
-                />
-                {errors.pan && <div style={{ fontSize: '11px', color: '#EF4444', marginTop: '2px' }}>{errors.pan}</div>}
               </div>
 
               <div>
@@ -1081,6 +1300,6 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
           </div>
         </div>
       </div>
-    </Modal>
+    </SideDrawer>
   );
 };
