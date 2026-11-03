@@ -44,10 +44,16 @@ export const SalesFlowTopologyPage: React.FC = () => {
     salesChannels,
     territories,
     zones,
+    config,
     addSalesFlow,
     updateSalesFlow,
     deleteSalesFlow
   } = useGtmV2();
+
+  const availablePricingOptions =
+    config?.pricingBasisOptions && config.pricingBasisOptions.length > 0
+      ? config.pricingBasisOptions
+      : PRICING_BASIS_OPTIONS;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFlowId, setSelectedFlowId] = useState<string | null>(salesFlows[0]?.id || null);
@@ -1048,7 +1054,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
                           fontSize: '12px'
                         }}
                       >
-                        {PRICING_BASIS_OPTIONS.map((basis) => (
+                        {availablePricingOptions.map((basis) => (
                           <option key={basis} value={basis}>
                             {basis}
                           </option>

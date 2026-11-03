@@ -26,8 +26,37 @@ export const GtmConfigurationPage: React.FC = () => {
   const [requireDirectorApprovalForDepositWaiver, setRequireDirectorApprovalForDepositWaiver] = useState(
     config.requireDirectorApprovalForDepositWaiver
   );
+  const [pricingBasisOptions, setPricingBasisOptions] = useState<string[]>([
+    ...(config.pricingBasisOptions || [
+      'Transfer Price',
+      'PTS (Price to Stockist)',
+      'PTR (Price to Retailer)',
+      'MRP Discount',
+      'Net Contract Price',
+      'Cost Plus Margin'
+    ])
+  ]);
+  const [newPricingBasis, setNewPricingBasis] = useState('');
 
   const [savedNotification, setSavedNotification] = useState(false);
+
+  const handleAddPricingBasis = () => {
+    if (!newPricingBasis.trim()) return;
+    if (pricingBasisOptions.includes(newPricingBasis.trim())) {
+      alert('This pricing basis already exists.');
+      return;
+    }
+    setPricingBasisOptions([...pricingBasisOptions, newPricingBasis.trim()]);
+    setNewPricingBasis('');
+  };
+
+  const handleRemovePricingBasis = (basisToRemove: string) => {
+    if (pricingBasisOptions.length <= 1) {
+      alert('At least one pricing basis must remain configured.');
+      return;
+    }
+    setPricingBasisOptions(pricingBasisOptions.filter((b) => b !== basisToRemove));
+  };
 
   const handleAddPartnerType = () => {
     if (!newPartnerType.trim()) return;
@@ -54,7 +83,8 @@ export const GtmConfigurationPage: React.FC = () => {
       allowOverlappingZones,
       maxDiscountDeviationPercent,
       autoApproveKycWithValidGst,
-      requireDirectorApprovalForDepositWaiver
+      requireDirectorApprovalForDepositWaiver,
+      pricingBasisOptions
     });
 
     setSavedNotification(true);
@@ -242,7 +272,53 @@ export const GtmConfigurationPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 3. Governance Policies & Approval Thresholds */}
+        {/* 3. Pricing Basis Master Catalog */}
+        <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ borderBottom: '1px solid #F1F5F9', paddingBottom: '12px', marginBottom: '14px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>
+              Pricing Basis Master Catalog
+            </h3>
+            <span style={{ fontSize: '12px', color: '#64748B' }}>
+              Commercial valuation models available across Fulfillment Stages.
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+            <input
+              type="text"
+              placeholder="Add pricing basis (e.g. Export CIF Rate)..."
+              value={newPricingBasis}
+              onChange={(e) => setNewPricingBasis(e.target.value)}
+              style={{ flex: 1, padding: '7px 12px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px' }}
+            />
+            <button
+              type="button"
+              onClick={handleAddPricingBasis}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#7C3AED', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '7px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              <Plus size={14} />
+              <span>Add</span>
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {pricingBasisOptions.map((basis) => (
+              <div key={basis} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '12.5px' }}>
+                <span style={{ fontWeight: 600, color: '#334155' }}>{basis}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemovePricingBasis(basis)}
+                  style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                  title="Remove pricing basis"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. Governance Policies & Approval Thresholds */}
         <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', gridColumn: '1 / -1' }}>
           <div style={{ borderBottom: '1px solid #F1F5F9', paddingBottom: '12px', marginBottom: '16px' }}>
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#0F172A' }}>

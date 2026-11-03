@@ -297,4 +297,5 @@ export interface GtmConfiguration {
   maxDiscountDeviationPercent: number;
   autoApproveKycWithValidGst: boolean;
   requireDirectorApprovalForDepositWaiver: boolean;
+  pricingBasisOptions?: string[];
 }

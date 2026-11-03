@@ -1015,5 +1015,13 @@ export const initialGtmConfigV2: GtmConfiguration = {
   allowOverlappingZones: true,
   maxDiscountDeviationPercent: 5.0, // Maximum deviation before requiring VP sign-off
   autoApproveKycWithValidGst: false,
-  requireDirectorApprovalForDepositWaiver: true
+  requireDirectorApprovalForDepositWaiver: true,
+  pricingBasisOptions: [
+    'Transfer Price',
+    'PTS (Price to Stockist)',
+    'PTR (Price to Retailer)',
+    'MRP Discount',
+    'Net Contract Price',
+    'Cost Plus Margin'
+  ]
 };
