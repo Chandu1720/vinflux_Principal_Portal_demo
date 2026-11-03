@@ -78,6 +78,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
     applicableTerritoryIds: string[];
     applicableZoneIds: string[];
     productScope: ProductScopeConfig;
+    enableCommercialOverrides?: boolean;
   }>({
     code: '',
     name: '',
@@ -87,6 +88,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
     stages: [],
     applicableTerritoryIds: [],
     applicableZoneIds: [],
+    enableCommercialOverrides: false,
     productScope: {
       scopeType: 'All',
       portfolioIds: [],
@@ -196,6 +198,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
       ],
       applicableTerritoryIds: [],
       applicableZoneIds: [],
+      enableCommercialOverrides: false,
       productScope: {
         scopeType: 'All',
         portfolioIds: [],
@@ -219,6 +222,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
       stages: JSON.parse(JSON.stringify(flow.stages)),
       applicableTerritoryIds: [...flow.applicableTerritoryIds],
       applicableZoneIds: [...flow.applicableZoneIds],
+      enableCommercialOverrides: Boolean(flow.enableCommercialOverrides),
       productScope: JSON.parse(JSON.stringify(flow.productScope))
     });
     setFormErrors({});
@@ -239,6 +243,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
       })),
       applicableTerritoryIds: [...flow.applicableTerritoryIds],
       applicableZoneIds: [...flow.applicableZoneIds],
+      enableCommercialOverrides: Boolean(flow.enableCommercialOverrides),
       productScope: JSON.parse(JSON.stringify(flow.productScope))
     });
     setFormErrors({});
@@ -297,12 +302,32 @@ export const SalesFlowTopologyPage: React.FC = () => {
       updated[index] = {
         ...updated[index],
         channelId: value,
-        channelName: foundChan ? foundChan.name : updated[index].channelName
+        channelName: foundChan ? foundChan.name : updated[index].channelName,
+        discountPercent: formData.enableCommercialOverrides ? updated[index].discountPercent : foundChan?.standardDiscountPercent,
+        creditPeriodDays: formData.enableCommercialOverrides ? updated[index].creditPeriodDays : foundChan?.creditPeriodDays,
+        creditLimit: formData.enableCommercialOverrides ? updated[index].creditLimit : foundChan?.creditLimit,
+        securityDeposit: formData.enableCommercialOverrides ? updated[index].securityDeposit : foundChan?.depositAmount
       };
     } else {
       updated[index] = { ...updated[index], [field]: value };
     }
     setFormData((prev) => ({ ...prev, stages: updated }));
+  };
+
+  const handleStageCommercialChange = (
+    index: number,
+    field: 'discountPercent' | 'creditPeriodDays' | 'creditLimit' | 'securityDeposit',
+    value: number
+  ) => {
+    setFormData((prev) => {
+      const updated = [...prev.stages];
+      updated[index] = {
+        ...updated[index],
+        overrideCommercialTerms: true,
+        [field]: value
+      };
+      return { ...prev, stages: updated };
+    });
   };
 
   // Submit modal
@@ -327,6 +352,7 @@ export const SalesFlowTopologyPage: React.FC = () => {
       applicableTerritoryIds: formData.applicableTerritoryIds,
       applicableZoneIds: formData.applicableZoneIds,
       productScope: formData.productScope,
+      enableCommercialOverrides: Boolean(formData.enableCommercialOverrides),
       effectiveFrom: new Date().toISOString().split('T')[0]
     };
 
@@ -540,6 +566,19 @@ export const SalesFlowTopologyPage: React.FC = () => {
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
                         <span style={{ color: '#64748B' }}>Pricing Basis:</span>
                         <span style={{ fontWeight: 600, color: '#0F172A' }}>{stage.pricingBasis}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                        <span style={{ color: '#64748B' }}>Discount:</span>
+                        <span style={{ fontWeight: 600, color: stage.discountPercent !== undefined ? '#7C3AED' : '#0F172A' }}>
+                          {stage.discountPercent ?? channelObj?.standardDiscountPercent}%
+                          {stage.discountPercent !== undefined && stage.discountPercent !== channelObj?.standardDiscountPercent ? ' (Override)' : ''}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                        <span style={{ color: '#64748B' }}>Credit Period:</span>
+                        <span style={{ fontWeight: 600, color: '#0F172A' }}>
+                          {stage.creditPeriodDays ?? channelObj?.creditPeriodDays} days
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -1065,6 +1104,436 @@ export const SalesFlowTopologyPage: React.FC = () => {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* ------------------------------------------------------------------ */}
+          {/* STAGE-LEVEL COMMERCIAL TERMS & OVERRIDES */}
+          {/* ------------------------------------------------------------------ */}
+          <div style={{ border: '1px solid #E2E8F0', borderRadius: '8px', padding: '16px', backgroundColor: '#FFFFFF' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                flexWrap: 'wrap',
+                gap: '12px',
+                marginBottom: '14px'
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>
+                    Commercial Terms of Selected Channels in Stages
+                  </h4>
+                  {formData.enableCommercialOverrides ? (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        backgroundColor: '#EDE9FE',
+                        color: '#7C3AED',
+                        padding: '2px 8px',
+                        borderRadius: '9999px'
+                      }}
+                    >
+                      Route Overrides Active
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        backgroundColor: '#F1F5F9',
+                        color: '#64748B',
+                        padding: '2px 8px',
+                        borderRadius: '9999px'
+                      }}
+                    >
+                      Inherited from Channel Master
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: '12px', color: '#64748B', marginTop: '2px', display: 'block' }}>
+                  Review commercial terms inherited from each stage&apos;s channel. Check &quot;Enable Commercial Terms Override&quot; to apply custom discounts, credit limits, or DSO specifically for this route.
+                </span>
+              </div>
+
+              {/* Checkbox for Enable Override */}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  backgroundColor: formData.enableCommercialOverrides ? '#F5F3FF' : '#F8FAFC',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: `1px solid ${formData.enableCommercialOverrides ? '#8B5CF6' : '#CBD5E1'}`,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(formData.enableCommercialOverrides)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setFormData((prev) => {
+                      const updatedStages = prev.stages.map((st) => {
+                        const chan = salesChannels.find((c) => c.id === st.channelId);
+                        return {
+                          ...st,
+                          overrideCommercialTerms: checked,
+                          discountPercent: st.discountPercent ?? (chan ? chan.standardDiscountPercent : 0),
+                          creditPeriodDays: st.creditPeriodDays ?? (chan ? chan.creditPeriodDays : 0),
+                          creditLimit: st.creditLimit ?? (chan ? chan.creditLimit : 0),
+                          securityDeposit: st.securityDeposit ?? (chan ? chan.depositAmount : 0)
+                        };
+                      });
+                      return {
+                        ...prev,
+                        enableCommercialOverrides: checked,
+                        stages: updatedStages
+                      };
+                    });
+                  }}
+                  style={{ width: '16px', height: '16px', accentColor: '#7C3AED', cursor: 'pointer' }}
+                />
+                <span
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: formData.enableCommercialOverrides ? '#6D28D9' : '#334155'
+                  }}
+                >
+                  Enable Commercial Terms Override
+                </span>
+              </label>
+            </div>
+
+            {/* Table of Commercial Terms of Selected in Stages */}
+            <div style={{ overflowX: 'auto', border: '1px solid #E2E8F0', borderRadius: '6px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: '#475569' }}>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Stage &amp; Role</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Selected Channel</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Pricing Basis</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>
+                      Discount % {formData.enableCommercialOverrides && <span style={{ color: '#7C3AED' }}>(Edit)</span>}
+                    </th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>
+                      Credit Period {formData.enableCommercialOverrides && <span style={{ color: '#7C3AED' }}>(Edit)</span>}
+                    </th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>
+                      Credit Limit (₹) {formData.enableCommercialOverrides && <span style={{ color: '#7C3AED' }}>(Edit)</span>}
+                    </th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>
+                      Security Deposit (₹) {formData.enableCommercialOverrides && <span style={{ color: '#7C3AED' }}>(Edit)</span>}
+                    </th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Terms Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {formData.stages.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: '#94A3B8' }}>
+                        No stages configured yet. Add stages above to configure commercial terms.
+                      </td>
+                    </tr>
+                  ) : (
+                    formData.stages.map((st, idx) => {
+                      const chan = salesChannels.find((c) => c.id === st.channelId);
+                      const currentDiscount = formData.enableCommercialOverrides
+                        ? (st.discountPercent ?? chan?.standardDiscountPercent ?? 0)
+                        : (chan?.standardDiscountPercent ?? 0);
+                      const currentCreditDays = formData.enableCommercialOverrides
+                        ? (st.creditPeriodDays ?? chan?.creditPeriodDays ?? 0)
+                        : (chan?.creditPeriodDays ?? 0);
+                      const currentCreditLimit = formData.enableCommercialOverrides
+                        ? (st.creditLimit ?? chan?.creditLimit ?? 0)
+                        : (chan?.creditLimit ?? 0);
+                      const currentDeposit = formData.enableCommercialOverrides
+                        ? (st.securityDeposit ?? chan?.depositAmount ?? 0)
+                        : (chan?.depositAmount ?? 0);
+
+                      const isCustom = Boolean(
+                        formData.enableCommercialOverrides &&
+                          ((st.discountPercent !== undefined && st.discountPercent !== chan?.standardDiscountPercent) ||
+                            (st.creditPeriodDays !== undefined && st.creditPeriodDays !== chan?.creditPeriodDays) ||
+                            (st.creditLimit !== undefined && st.creditLimit !== chan?.creditLimit) ||
+                            (st.securityDeposit !== undefined && st.securityDeposit !== chan?.depositAmount))
+                      );
+
+                      return (
+                        <tr
+                          key={st.id || idx}
+                          style={{
+                            borderBottom: idx < formData.stages.length - 1 ? '1px solid #F1F5F9' : 'none',
+                            backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA'
+                          }}
+                        >
+                          {/* Stage & Role */}
+                          <td style={{ padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <strong style={{ color: '#0F172A' }}>Stage {idx + 1}</strong>
+                              <span
+                                style={{
+                                  fontSize: '10.5px',
+                                  fontWeight: 600,
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  backgroundColor:
+                                    st.stageRole === 'Source'
+                                      ? '#EFF6FF'
+                                      : st.stageRole === 'Destination'
+                                      ? '#DCFCE7'
+                                      : '#FEF3C7',
+                                  color:
+                                    st.stageRole === 'Source'
+                                      ? '#1D4ED8'
+                                      : st.stageRole === 'Destination'
+                                      ? '#15803D'
+                                      : '#B45309'
+                                }}
+                              >
+                                {st.stageRole}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Selected Channel */}
+                          <td style={{ padding: '10px 12px' }}>
+                            <div style={{ fontWeight: 600, color: '#1E293B' }}>
+                              {chan?.name || st.channelName}
+                            </div>
+                            <span style={{ fontSize: '11px', color: '#64748B' }}>
+                              {chan?.code || 'N/A'}
+                            </span>
+                          </td>
+
+                          {/* Pricing Basis */}
+                          <td style={{ padding: '10px 12px' }}>
+                            <span
+                              style={{
+                                fontSize: '11.5px',
+                                fontWeight: 500,
+                                color: '#4338CA',
+                                backgroundColor: '#EEF2FF',
+                                padding: '2px 8px',
+                                borderRadius: '4px'
+                              }}
+                            >
+                              {st.pricingBasis}
+                            </span>
+                          </td>
+
+                          {/* Discount % */}
+                          <td style={{ padding: '10px 12px' }}>
+                            {formData.enableCommercialOverrides ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="100"
+                                  value={currentDiscount}
+                                  onChange={(e) =>
+                                    handleStageCommercialChange(
+                                      idx,
+                                      'discountPercent',
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  style={{
+                                    width: '70px',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #7C3AED',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    color: '#0F172A',
+                                    backgroundColor: '#FAF5FF'
+                                  }}
+                                />
+                                <span style={{ color: '#64748B', fontSize: '11.5px' }}>%</span>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <strong style={{ color: '#0F172A' }}>{currentDiscount}%</strong>
+                                <span style={{ fontSize: '10.5px', color: '#94A3B8' }}>(Base)</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Credit Period */}
+                          <td style={{ padding: '10px 12px' }}>
+                            {formData.enableCommercialOverrides ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="365"
+                                  value={currentCreditDays}
+                                  onChange={(e) =>
+                                    handleStageCommercialChange(
+                                      idx,
+                                      'creditPeriodDays',
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                  style={{
+                                    width: '65px',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #7C3AED',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    color: '#0F172A',
+                                    backgroundColor: '#FAF5FF'
+                                  }}
+                                />
+                                <span style={{ color: '#64748B', fontSize: '11.5px' }}>days</span>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <strong style={{ color: '#0F172A' }}>{currentCreditDays}</strong>
+                                <span style={{ fontSize: '11.5px', color: '#64748B' }}>days</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Credit Limit */}
+                          <td style={{ padding: '10px 12px' }}>
+                            {formData.enableCommercialOverrides ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ color: '#64748B', fontSize: '11.5px' }}>₹</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="50000"
+                                  value={currentCreditLimit}
+                                  onChange={(e) =>
+                                    handleStageCommercialChange(
+                                      idx,
+                                      'creditLimit',
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  style={{
+                                    width: '100px',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #7C3AED',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    color: '#0F172A',
+                                    backgroundColor: '#FAF5FF'
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <strong style={{ color: '#0F172A' }}>
+                                ₹{(currentCreditLimit / 100000).toFixed(1)}L
+                              </strong>
+                            )}
+                          </td>
+
+                          {/* Security Deposit */}
+                          <td style={{ padding: '10px 12px' }}>
+                            {formData.enableCommercialOverrides ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ color: '#64748B', fontSize: '11.5px' }}>₹</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="25000"
+                                  value={currentDeposit}
+                                  onChange={(e) =>
+                                    handleStageCommercialChange(
+                                      idx,
+                                      'securityDeposit',
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  style={{
+                                    width: '90px',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #7C3AED',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    color: '#0F172A',
+                                    backgroundColor: '#FAF5FF'
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <strong style={{ color: '#0F172A' }}>
+                                ₹{(currentDeposit / 100000).toFixed(1)}L
+                              </strong>
+                            )}
+                          </td>
+
+                          {/* Status Badge */}
+                          <td style={{ padding: '10px 12px' }}>
+                            {isCustom ? (
+                              <span
+                                style={{
+                                  fontSize: '10.5px',
+                                  fontWeight: 700,
+                                  backgroundColor: '#F3E8FF',
+                                  color: '#7E22CE',
+                                  padding: '2px 8px',
+                                  borderRadius: '9999px',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                Overridden
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: '10.5px',
+                                  fontWeight: 600,
+                                  backgroundColor: '#F1F5F9',
+                                  color: '#64748B',
+                                  padding: '2px 8px',
+                                  borderRadius: '9999px',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                Inherited
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {formData.enableCommercialOverrides && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  fontSize: '11.5px',
+                  color: '#6D28D9',
+                  backgroundColor: '#F5F3FF',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>💡</span>
+                <span>
+                  <strong>Overrides Active:</strong> The customized discounts, credit days, and limits above will be saved directly with this sales flow topology and will override the standard channel master terms.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* ------------------------------------------------------------------ */}

@@ -115,6 +115,11 @@ export interface SalesFlowStage {
   pricingBasis: string; // e.g. "Ex-Factory Cost", "Price to Distributor (PTD)", "Price to Retailer (PTR)", "MRP"
   inventoryOwnership: 'Company Owned' | 'Consignment' | 'Title Transfer' | 'Customer Owned';
   requiresLogisticsDispatch: boolean;
+  overrideCommercialTerms?: boolean;
+  discountPercent?: number;
+  creditPeriodDays?: number;
+  creditLimit?: number;
+  securityDeposit?: number;
 }
 
 export interface ProductScopeConfig {
@@ -139,6 +144,7 @@ export interface SalesFlowTopology {
   applicableTerritoryIds: string[];
   applicableZoneIds: string[];
   productScope: ProductScopeConfig;
+  enableCommercialOverrides?: boolean;
   status: ActiveStatus;
   effectiveFrom: string;
   effectiveTo?: string;
