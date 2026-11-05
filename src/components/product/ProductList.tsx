@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext.tsx';
 import type { Product } from '../../types/product.ts';
+import { LifecycleDialog, availableActions } from './LifecycleDialog.tsx';
+import { IndustryPacksDrawer } from './IndustryPacksDrawer.tsx';
+import type { LifecycleAction } from './LifecycleDialog.tsx';
 
 interface ProductListProps {
   onViewProduct: (productId: string) => void;
@@ -28,10 +31,12 @@ export const ProductList: React.FC<ProductListProps> = ({
     portfolios,
     productTypes,
     duplicateProduct,
-    retireProduct,
-    bulkUpdateProductStatus,
+    bulkApproveProducts,
+    currentUser,
     showToast
   } = useApp();
+  const [lifecycle, setLifecycle] = useState<{ product: Product; action: LifecycleAction } | null>(null);
+  const [packsOpen, setPacksOpen] = useState(false);
 
   const [configureOpen, setConfigureOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -185,7 +190,9 @@ export const ProductList: React.FC<ProductListProps> = ({
   const handleBulkStatus = () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    bulkUpdateProductStatus(ids, 'Active');
+    const r = bulkApproveProducts(ids);
+    showToast(r.message, r.ok ? 'success' : 'warning');
+    (r.errors ?? []).slice(0, 3).forEach((e) => showToast(e, 'warning'));
     setSelectedIds(new Set());
   };
 
@@ -232,6 +239,13 @@ export const ProductList: React.FC<ProductListProps> = ({
                 onClick={() => setConfigureOpen(false)}
               >
                 <div className="vf-dropdown-header">Product Configuration</div>
+                <div className="vf-dropdown-item" onClick={() => { setPacksOpen(true); setConfigureOpen(false); }}>
+                  <span className="vf-dropdown-icon">🧩</span>
+                  <div>
+                    <div className="vf-dropdown-title">Industry Packs</div>
+                    <div className="vf-dropdown-desc">Switch Medical Devices / FMCG / General on or off</div>
+                  </div>
+                </div>
                 <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('productTypes')}>
                   <span className="vf-dropdown-icon">🏷️</span>
                   <div>
@@ -590,8 +604,10 @@ export const ProductList: React.FC<ProductListProps> = ({
               className="vf-btn vf-btn-sm vf-btn-secondary"
               onClick={handleBulkStatus}
               style={{ background: '#334155', color: '#fff', borderColor: '#475569' }}
+              disabled={!currentUser.permissions.canApproveProducts}
+              title={currentUser.permissions.canApproveProducts ? 'Approve selected products that are pending approval' : 'You do not have approval rights'}
             >
-              Set Active
+              Approve selected
             </button>
             <button
               type="button"
@@ -747,17 +763,20 @@ export const ProductList: React.FC<ProductListProps> = ({
                         >
                           📋
                         </button>
-                        {p.lifecycleStatus !== 'Retired' && (
+                        {availableActions(p, currentUser.permissions).filter((a) => a !== 'reject').map((a) => (
                           <button
+                            key={a}
                             type="button"
                             className="vf-btn vf-btn-sm"
-                            style={{ background: 'transparent', border: '1px solid #fecaca', color: '#dc2626' }}
-                            onClick={() => retireProduct(p.id)}
-                            title="Retire Product"
+                            style={a === 'retire'
+                              ? { background: 'transparent', border: '1px solid #fecaca', color: '#dc2626' }
+                              : { background: 'transparent', border: '1px solid #c7d2fe', color: '#4338ca' }}
+                            onClick={() => setLifecycle({ product: p, action: a })}
+                            title={a === 'submit' ? 'Submit for approval' : a === 'approve' ? 'Approve' : 'Retire product'}
                           >
-                            Retire
+                            {a === 'submit' ? 'Submit' : a === 'approve' ? 'Review' : 'Retire'}
                           </button>
-                        )}
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -810,6 +829,8 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
         </div>
       </div>
+      {packsOpen && <IndustryPacksDrawer onClose={() => setPacksOpen(false)} />}
+      {lifecycle && <LifecycleDialog product={lifecycle.product} action={lifecycle.action} onClose={() => setLifecycle(null)} />}
     </div>
   );
 };

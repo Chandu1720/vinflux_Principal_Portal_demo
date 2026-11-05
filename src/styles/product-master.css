@@ -1662,3 +1662,20 @@ textarea.vf-input {
   padding: 0;
 }
 
+
+/* ---------- Product lifecycle (maker-checker) ---------- */
+.vf-lc-errors { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
+.vf-lc-errors ul { margin: 6px 0 0 18px; padding: 0; }
+.vf-lc-errors li { margin: 2px 0; }
+.vf-lc-banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-top: 12px; }
+.vf-lc-banner.pending { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.vf-lc-banner.rejected { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+.vf-lc-banner.retired { background: #f1f5f9; border: 1px solid #e2e8f0; color: #475569; }
+.vf-lc-banner .vf-btn { margin-left: auto; }
+.vf-exp-ok { color: #047857; font-weight: 600; }
+.vf-exp-warn { color: #b45309; font-weight: 600; }
+.vf-exp-bad { color: #b91c1c; font-weight: 600; }
+.vf-chip-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--vf-slate-200, #e2e8f0); border-radius: 8px; padding: 6px 8px; background: #fff; }
+.vf-chip { display: inline-flex; align-items: center; gap: 4px; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.vf-chip button { border: 0; background: none; cursor: pointer; color: inherit; padding: 0; font-size: 13px; line-height: 1; }
+.vf-chip-input input { border: 0; outline: none; flex: 1; min-width: 90px; font-size: 13px; }

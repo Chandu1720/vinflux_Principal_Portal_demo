@@ -1,17 +1,23 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext.tsx';
+import { usePlatform } from '../../platform/PlatformContext';
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { activePrincipal, principals, setActivePrincipal, currentUser, setCurrentUser, showToast } = useApp();
+  const { activePrincipal, principals, setActivePrincipal, currentUser, showToast, switchUser } = useApp();
 
   const isProducts = location.pathname === '/' || location.pathname.startsWith('/products');
-  const isGtm = location.pathname.startsWith('/gtm');
-  const isPartners = location.pathname.startsWith('/partners');
   const isBranches = location.pathname.startsWith('/branches');
   const isWarehouses = location.pathname.startsWith('/warehouses');
+  const { enabled } = usePlatform();
+  const nav = (path: string, label: string, icon: React.ReactNode) => (
+    <button type="button" className={`vf-nav-item ${location.pathname.startsWith(path) ? 'active' : ''}`} onClick={() => navigate(path)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
+      {icon}<span>{label}</span>
+    </button>
+  );
+  const ic = (d: string) => <svg className="vf-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d} /></svg>;
 
   const handleSwitchPrincipal = () => {
     const currentIndex = principals.findIndex((p) => p.id === activePrincipal.id);
@@ -19,23 +25,6 @@ export const Sidebar: React.FC = () => {
     const nextPrincipal = principals[nextIndex];
     setActivePrincipal(nextPrincipal);
     showToast(`Switched active principal to "${nextPrincipal.name}".`, 'info');
-  };
-
-  const handleToggleAdmin = () => {
-    setCurrentUser((prev) => {
-      const nextCanManage = !prev.permissions.canManageConfig;
-      showToast(
-        nextCanManage ? 'Admin configuration mode enabled.' : 'Standard operational user mode enabled.',
-        'info'
-      );
-      return {
-        ...prev,
-        permissions: {
-          ...prev.permissions,
-          canManageConfig: nextCanManage
-        }
-      };
-    });
   };
 
   return (
@@ -90,52 +79,14 @@ export const Sidebar: React.FC = () => {
         </div>
 
         {/* Go-to-Market Group */}
-        <div className="vf-nav-section">
+        {enabled('go-to-market') && <div className="vf-nav-section">
           <div className="vf-nav-heading">Go-to-market</div>
 
-          {/* GTM V2 Enterprise Link */}
+          {/* Both open the Go-to-Market module (its own full-screen layout). */}
           <button
             type="button"
             className="vf-nav-item"
-            onClick={() => navigate('/gtm-v2')}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              background: '#EDE9FE',
-              border: '1px solid #DDD6FE',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '7px 10px',
-              marginBottom: '6px'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <svg className="vf-nav-icon" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2.5">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-              <span style={{ fontWeight: 700, color: '#7C3AED', fontSize: '12.5px' }}>GTM V2 (Enterprise)</span>
-            </div>
-            <span
-              style={{
-                fontSize: '9.5px',
-                fontWeight: 800,
-                backgroundColor: '#7C3AED',
-                color: '#FFFFFF',
-                padding: '1px 5px',
-                borderRadius: '4px'
-              }}
-            >
-              V2
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className={`vf-nav-item ${isGtm ? 'active' : ''}`}
-            onClick={() => navigate('/gtm')}
+            onClick={() => navigate('/gtm-v2/dashboard')}
             style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
           >
             <svg className="vf-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -145,21 +96,27 @@ export const Sidebar: React.FC = () => {
               <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
               <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
             </svg>
-            <span>GTM Configuration</span>
+            <span>GTM Dashboard &amp; Setup</span>
           </button>
 
           <button
             type="button"
-            className={`vf-nav-item ${isPartners ? 'active' : ''}`}
-            onClick={() => navigate('/partners')}
+            className="vf-nav-item"
+            onClick={() => navigate('/gtm-v2/partners')}
             style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
           >
             <svg className="vf-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            <span>Partner Management</span>
+            <span>Partners</span>
           </button>
-        </div>
+        </div>}
+
+        {/* Commercial */}
+        {enabled('price-lists') && <div className="vf-nav-section">
+          <div className="vf-nav-heading">Commercial</div>
+          {nav('/pricing', 'Price Lists & Contracts', ic('M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01'))}
+        </div>}
 
         {/* Supply Infrastructure Group */}
         <div className="vf-nav-section">
@@ -190,23 +147,29 @@ export const Sidebar: React.FC = () => {
             </svg>
             <span>Warehouse Master</span>
           </button>
+          {enabled('inventory') && nav('/inventory', 'Stock on Hand', ic('M3 7l9-4 9 4-9 4-9-4zm0 5l9 4 9-4M3 17l9 4 9-4'))}
+        </div>
+
+        {/* Platform */}
+        <div className="vf-nav-section">
+          <div className="vf-nav-heading">Platform</div>
+          {nav('/data-import', 'Data Import', ic('M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3'))}
+          {nav('/integrations', 'Integration Hub', ic('M8 7h8M8 12h8M8 17h5M4 4h16v16H4z'))}
+          {enabled('users') && nav('/users', 'Users & Roles', ic('M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zm13 10v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75'))}
+          {nav('/modules', 'Modules', ic('M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'))}
         </div>
       </nav>
 
       {/* Sidebar User Footer */}
       <div className="vf-sidebar-footer" style={{ marginTop: 'auto' }}>
         <div className="vf-user-profile">
-          <div className="vf-avatar">AR</div>
+          <div className="vf-avatar">{currentUser.name.replace(/^Dr\.\s*/, '').split(/\s+/).map((w) => w[0]).slice(0, 2).join('')}</div>
           <div className="vf-user-info">
-            <div className="vf-user-name">{currentUser.name}</div>
+            <div className="vf-user-name" onClick={switchUser} style={{ cursor: 'pointer' }} title="Switch demo user (maker / checker)">{currentUser.name} ⇄</div>
+            <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>{currentUser.role}</div>
             <div style={{ marginTop: '2px' }}>
-              <span
-                className={`vf-badge ${currentUser.permissions.canManageConfig ? 'vf-badge-approved' : ''}`}
-                onClick={handleToggleAdmin}
-                style={{ cursor: 'pointer', fontSize: '9.5px', padding: '1px 6px', display: 'inline-block' }}
-                title="Click to toggle Admin permissions"
-              >
-                {currentUser.permissions.canManageConfig ? 'Admin: Config Enabled ▾' : 'Standard User ▾'}
+              <span className="vf-badge" onClick={() => navigate('/users')} style={{ cursor: 'pointer', fontSize: '9.5px', padding: '1px 6px', display: 'inline-block' }} title="Users & Roles — sign in as another user">
+                {currentUser.scope && (currentUser.scope.territoryIds.length || currentUser.scope.warehouseIds.length) ? 'Scoped · switch user ▾' : 'Switch user ▾'}
               </span>
             </div>
           </div>

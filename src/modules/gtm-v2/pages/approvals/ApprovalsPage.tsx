@@ -1,468 +1,152 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { CheckCircle2, CheckSquare, Clock, Eye, ThumbsDown, ThumbsUp, UserCheck, XCircle } from 'lucide-react';
+import type { ApprovalCategory, ApprovalRequest } from '../../types';
+import { useApprovals, useConfig, usePartners } from '../../hooks/useGtmData';
+import { useGtmAuth } from '../../hooks/useGtmAuth';
+import { useAction } from '../../hooks/useAction';
+import { approvalService } from '../../services';
 import {
-  Search,
-  Filter,
-  CheckCircle2,
-  XCircle
-} from 'lucide-react';
-import { useGtmV2 } from '../../context/GtmV2Context';
-import type { ApprovalRequest, ApprovalRequestStatus } from '../../types/gtmV2.types';
-import { SideDrawer } from '../../components/common/SideDrawer';
+  Badge, Button, Card, Checkbox, DataTable, ErrorState, IconButton, KpiCard, LoadingState, PageHeader, SearchInput, Select, StatusBadge, Tabs,
+} from '../../components/ui';
+import type { Column } from '../../components/ui';
+import { formatDate, includesText } from '../../utils/format';
+import { ApprovalDetailModal } from './ApprovalDetailModal';
+import { DecisionModal } from './DecisionModal';
 
-export const ApprovalsPage: React.FC = () => {
-  const { approvals, approveRequest, rejectRequest } = useGtmV2();
+const ALL = 'ALL';
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatusTab, setSelectedStatusTab] = useState<string>('Pending');
-  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('All');
-  const [selectedRequest, setSelectedRequest] = useState<ApprovalRequest | null>(null);
+const ApprovalsPage: React.FC = () => {
+  const approvalsQ = useApprovals();
+  const configQ = useConfig();
+  const partners = usePartners().data ?? [];
+  const { can, actor, user, showToast } = useGtmAuth();
+  const { run, pending } = useAction();
 
-  // Decision Modal state
-  const [decisionType, setDecisionType] = useState<'Approve' | 'Reject' | null>(null);
-  const [decisionNotes, setDecisionNotes] = useState('');
+  const [category, setCategory] = useState<string>(ALL);
+  const [status, setStatus] = useState<string>('Pending');
+  const [q, setQ] = useState('');
+  const [view, setView] = useState<ApprovalRequest | null>(null);
+  const [decision, setDecision] = useState<{ req: ApprovalRequest; mode: 'Approved' | 'Rejected' } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // Status counts
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { All: approvals.length, Pending: 0, Approved: 0, Rejected: 0 };
-    approvals.forEach((a) => {
-      counts[a.status] = (counts[a.status] || 0) + 1;
-    });
-    return counts;
-  }, [approvals]);
+  const approvals = useMemo(() => approvalsQ.data ?? [], [approvalsQ.data]);
+  const workflows = useMemo(() => configQ.data?.approvalWorkflows ?? [], [configQ.data]);
+  const catLabel = (c: ApprovalCategory) => workflows.find((w) => w.category === c)?.label ?? c;
+  const partnerName = (id: string | null) => partners.find((p) => p.id === id)?.name ?? '—';
+  const currentRole = (r: ApprovalRequest) => r.steps.find((s) => s.level === r.currentLevel)?.role ?? '—';
 
-  const filteredApprovals = useMemo(() => {
-    return approvals.filter((a) => {
-      const matchSearch =
-        a.partnerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        a.partnerCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        a.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        a.justification.toLowerCase().includes(searchTerm.toLowerCase());
+  const filtered = approvals.filter((a) =>
+    (category === ALL || a.category === category)
+    && (status === ALL || a.status === status)
+    && includesText([a.requestNo, a.summary, a.requestedBy, partnerName(a.partnerId), catLabel(a.category)], q));
 
-      const matchStatus = selectedStatusTab === 'All' || a.status === selectedStatusTab;
-      const matchType = selectedTypeFilter === 'All' || a.requestType === selectedTypeFilter;
+  const pendingAll = approvals.filter((a) => a.status === 'Pending');
+  const myQueue = pendingAll.filter((a) => can.approve && (currentRole(a).toLowerCase() === user.role.toLowerCase() || can.manageConfig));
 
-      return matchSearch && matchStatus && matchType;
-    });
-  }, [approvals, searchTerm, selectedStatusTab, selectedTypeFilter]);
-
-  const handleExecuteDecision = () => {
-    if (!selectedRequest || !decisionType) return;
-
-    if (decisionType === 'Approve') {
-      approveRequest(selectedRequest.id, decisionNotes.trim() || 'Approved by Commercial Director.');
-    } else {
-      rejectRequest(selectedRequest.id, decisionNotes.trim() || 'Rejected due to margin threshold constraint.');
-    }
-
-    setDecisionType(null);
-    setSelectedRequest(null);
-    setDecisionNotes('');
+  const decide = async (req: ApprovalRequest, mode: 'Approved' | 'Rejected', comments: string) => {
+    const r = await run(() => approvalService.act(req.id, mode, comments, actor));
+    if (!r) return false;
+    if (!r.final && 'nextRole' in r) showToast(`${req.requestNo} approved at level ${req.currentLevel}. Forwarded to ${r.nextRole}.`, 'info');
+    else showToast(`${req.requestNo} ${r.status === 'Approved' ? 'fully approved' : 'rejected'}.`, r.status === 'Approved' ? 'success' : 'warning');
+    setSelected((s) => { const x = new Set(s); x.delete(req.id); return x; });
+    return true;
   };
 
-  const getStatusBadge = (status: ApprovalRequestStatus) => {
-    switch (status) {
-      case 'Approved':
-        return { bg: '#DCFCE7', color: '#16A34A', border: '#86EFAC' };
-      case 'Rejected':
-        return { bg: '#FEE2E2', color: '#DC2626', border: '#FECACA' };
-      case 'Pending':
-      default:
-        return { bg: '#FEF3C7', color: '#B45309', border: '#FDE68A' };
+  const bulkApprove = async () => {
+    const reqs = approvals.filter((a) => selected.has(a.id) && a.status === 'Pending');
+    let ok = 0;
+    for (const req of reqs) {
+      try { await approvalService.act(req.id, 'Approved', 'Bulk approved', actor); ok++; } catch { /* skipped */ }
     }
+    showToast(`${ok} of ${reqs.length} request(s) approved at their current level.`, ok ? 'success' : 'warning');
+    setSelected(new Set());
   };
+
+  if (approvalsQ.error) return <ErrorState message={approvalsQ.error} onRetry={approvalsQ.refetch} />;
+  if (approvalsQ.loading && !approvalsQ.data) return <LoadingState />;
+
+  const selectablePending = filtered.filter((a) => a.status === 'Pending');
+  const allChecked = selectablePending.length > 0 && selectablePending.every((a) => selected.has(a.id));
+
+  const columns: Column<ApprovalRequest>[] = [
+    ...(can.approve ? [{
+      key: 'sel', header: <Checkbox checked={allChecked} onChange={(c) => setSelected(c ? new Set(selectablePending.map((a) => a.id)) : new Set())} />, width: 36,
+      render: (r: ApprovalRequest) => r.status === 'Pending'
+        ? <Checkbox checked={selected.has(r.id)} onChange={(c) => setSelected((s) => { const x = new Set(s); if (c) x.add(r.id); else x.delete(r.id); return x; })} />
+        : null,
+    }] : []),
+    { key: 'no', header: 'Request ID', sortValue: (r) => r.requestNo, render: (r) => <span className="g2-mono g2-strong">{r.requestNo}</span> },
+    { key: 'type', header: 'Request Type', sortValue: (r) => catLabel(r.category), render: (r) => <div><div className="g2-cell-main">{catLabel(r.category)}</div><div className="g2-cell-sub g2-ellipsis" style={{ maxWidth: 260 }}>{r.summary}</div></div> },
+    { key: 'partner', header: 'Partner', sortValue: (r) => partnerName(r.partnerId), render: (r) => partnerName(r.partnerId) },
+    { key: 'by', header: 'Requested By', sortValue: (r) => r.requestedBy, render: (r) => r.requestedBy },
+    { key: 'date', header: 'Request Date', sortValue: (r) => r.requestedAt, render: (r) => formatDate(r.requestedAt) },
+    { key: 'level', header: 'Current Level', render: (r) => r.status === 'Pending' ? <span className="g2-small">L{r.currentLevel}/{r.steps.length} · {currentRole(r)}</span> : <span className="g2-muted g2-small">Closed</span> },
+    { key: 'status', header: 'Status', sortValue: (r) => r.status, render: (r) => <StatusBadge status={r.status} /> },
+    {
+      key: 'actions', header: '', className: 'actions', render: (r) => (
+        <div className="g2-row" style={{ justifyContent: 'flex-end', gap: 2 }} onClick={(e) => e.stopPropagation()}>
+          <IconButton label="View" onClick={() => setView(r)}><Eye size={16} /></IconButton>
+          <IconButton label={can.approve ? 'Approve' : 'You do not have approval authority'} disabled={!can.approve || r.status !== 'Pending'} onClick={() => setDecision({ req: r, mode: 'Approved' })}><ThumbsUp size={16} color={can.approve && r.status === 'Pending' ? 'var(--g2-green)' : undefined} /></IconButton>
+          <IconButton label={can.approve ? 'Reject' : 'You do not have approval authority'} disabled={!can.approve || r.status !== 'Pending'} onClick={() => setDecision({ req: r, mode: 'Rejected' })}><ThumbsDown size={16} color={can.approve && r.status === 'Pending' ? 'var(--g2-red)' : undefined} /></IconButton>
+        </div>
+      ),
+    },
+  ];
+
+  const countFor = (c: string) => approvals.filter((a) => (c === ALL || a.category === c) && (status === ALL || a.status === status)).length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* -------------------------------------------------------------------- */}
-      {/* HEADER */}
-      {/* -------------------------------------------------------------------- */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px'
-        }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#0F172A' }}>
-              Governance & Commercial Approvals Queue
-            </h2>
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                backgroundColor: statusCounts.Pending > 0 ? '#FEE2E2' : '#EDE9FE',
-                color: statusCounts.Pending > 0 ? '#DC2626' : '#7C3AED',
-                padding: '2px 8px',
-                borderRadius: '9999px'
-              }}
-            >
-              {statusCounts.Pending} Action Required
-            </span>
-          </div>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
-            Review, audit, and authorize commercial terms deviations, KYC exceptions, and credit ceiling adjustments.
-          </p>
-        </div>
+    <>
+      <PageHeader
+        title="Approvals"
+        description="Governance queue for onboarding, KYC, commercial overrides, credit holds and hospital transfers. Multi-level workflows come from Configuration."
+        actions={can.approve && selected.size > 0 ? <Button variant="success" icon={<CheckCircle2 size={15} />} loading={pending} onClick={bulkApprove}>Approve selected ({selected.size})</Button> : undefined}
+      />
+      {!can.approve && <div className="g2-alert g2-alert-warn" style={{ marginBottom: 16 }}>You can view requests but do not have approval authority (requires the “approve” permission from your VinFlux role).</div>}
+      <div className="g2-grid g2-grid-4" style={{ marginBottom: 16 }}>
+        <KpiCard label="Pending" value={pendingAll.length} icon={<Clock size={22} />} color="#b45309" bg="#fffbeb" onClick={() => { setStatus('Pending'); setCategory(ALL); }} />
+        <KpiCard label="Approved" value={approvals.filter((a) => a.status === 'Approved').length} icon={<CheckSquare size={22} />} color="#059669" bg="#ecfdf5" onClick={() => setStatus('Approved')} />
+        <KpiCard label="Rejected" value={approvals.filter((a) => a.status === 'Rejected').length} icon={<XCircle size={22} />} color="#dc2626" bg="#fef2f2" onClick={() => setStatus('Rejected')} />
+        <KpiCard label="My Queue" value={myQueue.length} icon={<UserCheck size={22} />} color="#6d28d9" bg="#f5f3ff" foot={can.approve ? 'Awaiting your action' : 'No approval authority'} onClick={() => setStatus('Pending')} />
       </div>
-
-      {/* -------------------------------------------------------------------- */}
-      {/* FILTER TABS & SEARCH */}
-      {/* -------------------------------------------------------------------- */}
-      <div
-        style={{
-          backgroundColor: '#FFFFFF',
-          border: '1px solid #E2E8F0',
-          borderRadius: '12px',
-          padding: '16px 20px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '14px'
-        }}
-      >
-        {/* Status Tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid #F1F5F9', paddingBottom: '12px' }}>
-          {(['Pending', 'Approved', 'Rejected', 'All'] as const).map((status) => {
-            const isSelected = selectedStatusTab === status;
-            const count = statusCounts[status] || 0;
-            return (
-              <button
-                key={status}
-                type="button"
-                onClick={() => setSelectedStatusTab(status)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  backgroundColor: isSelected ? '#7C3AED' : '#F8FAFC',
-                  color: isSelected ? '#FFFFFF' : '#64748B',
-                  fontSize: '12.5px',
-                  fontWeight: isSelected ? 600 : 500,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s'
-                }}
-              >
-                <span>{status}</span>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    padding: '1px 6px',
-                    borderRadius: '9999px',
-                    backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : '#E2E8F0',
-                    color: isSelected ? '#FFFFFF' : '#475569',
-                    fontWeight: 700
-                  }}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+      <Card flush>
+        <div style={{ padding: '0 18px' }}>
+          <Tabs active={category} onChange={setCategory} tabs={[{ id: ALL, label: 'All', count: countFor(ALL) }, ...workflows.map((w) => ({ id: w.category, label: w.label, count: countFor(w.category) }))]} />
         </div>
-
-        {/* Filter controls */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-          <div style={{ position: 'relative', width: '320px', maxWidth: '100%' }}>
-            <Search
-              size={15}
-              style={{
-                position: 'absolute',
-                left: '12px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: '#94A3B8'
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Search by partner or request..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '7px 12px 7px 34px',
-                borderRadius: '6px',
-                border: '1px solid #CBD5E1',
-                fontSize: '12.5px',
-                outline: 'none'
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Filter size={14} color="#64748B" />
-            <select
-              value={selectedTypeFilter}
-              onChange={(e) => setSelectedTypeFilter(e.target.value)}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '6px',
-                border: '1px solid #CBD5E1',
-                fontSize: '12px',
-                backgroundColor: '#FFFFFF',
-                color: '#334155'
-              }}
-            >
-              <option value="All">All Request Types</option>
-              <option value="Partner Onboarding">Partner Onboarding</option>
-              <option value="KYC Verification">KYC Verification</option>
-              <option value="Discount Override">Discount Override</option>
-              <option value="Credit Limit Change">Credit Limit Change</option>
-              <option value="Credit Period Extension">Credit Period Extension</option>
-              <option value="Deposit Waiver">Deposit Waiver</option>
-              <option value="Sales Flow Override">Sales Flow Override</option>
-            </select>
-          </div>
+        <div className="g2-filterbar">
+          <SearchInput value={q} onChange={setQ} placeholder="Search request, partner, requester…" />
+          <Select value={status} onChange={setStatus} options={[{ value: ALL, label: 'All statuses' }, { value: 'Pending', label: 'Pending' }, { value: 'Approved', label: 'Approved' }, { value: 'Rejected', label: 'Rejected' }]} />
+          {(q || category !== ALL || status !== 'Pending') && <Button variant="ghost" size="sm" onClick={() => { setQ(''); setCategory(ALL); setStatus('Pending'); }}>Reset filters</Button>}
+          <span className="g2-spacer" />
+          <Badge tone="purple">{filtered.length} request(s)</Badge>
         </div>
+        <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} onRowClick={setView} initialSort={{ key: 'date', dir: 'desc' }}
+          emptyTitle="No requests" emptyDescription="Nothing matches the current filters." />
+      </Card>
 
-        {/* Approvals Table */}
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: '#475569', fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                <th style={{ padding: '10px 14px' }}>Request Type & ID</th>
-                <th style={{ padding: '10px 14px' }}>Partner Entity</th>
-                <th style={{ padding: '10px 14px' }}>Requested Variance</th>
-                <th style={{ padding: '10px 14px' }}>Initiated By</th>
-                <th style={{ padding: '10px 14px' }}>Status</th>
-                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredApprovals.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#94A3B8' }}>
-                    No approval requests found in this view.
-                  </td>
-                </tr>
-              ) : (
-                filteredApprovals.map((req) => {
-                  const badge = getStatusBadge(req.status);
-                  return (
-                    <tr
-                      key={req.id}
-                      style={{ borderBottom: '1px solid #F1F5F9', transition: 'background-color 0.1s' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F8FAFC')}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#FFFFFF')}
-                    >
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: 600, color: '#0F172A' }}>{req.requestType}</div>
-                        <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                          ID: {req.id} • {new Date(req.requestedAt).toLocaleDateString()}
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: 600, color: '#0F172A' }}>{req.partnerName}</div>
-                        <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '2px' }}>
-                          Code: {req.partnerCode}
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '12px', color: '#334155' }}>
-                          {req.proposedValues.discountPercent !== undefined && (
-                            <span>
-                              Discount: <strong>{req.proposedValues.discountPercent}%</strong> (was {req.previousValues?.discountPercent}%)
-                            </span>
-                          )}
-                          {req.proposedValues.creditLimit !== undefined && (
-                            <div>
-                              Credit Limit: <strong>₹{(req.proposedValues.creditLimit / 100000).toFixed(1)}L</strong>
-                            </div>
-                          )}
-                          {req.proposedValues.creditPeriodDays !== undefined && (
-                            <div>
-                              Credit Days: <strong>{req.proposedValues.creditPeriodDays} Days</strong>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontSize: '12.5px', color: '#334155' }}>{req.requestedBy}</div>
-                        <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                          {req.justification.slice(0, 35)}...
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '12px 14px' }}>
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            borderRadius: '9999px',
-                            backgroundColor: badge.bg,
-                            color: badge.color,
-                            border: `1px solid ${badge.border}`
-                          }}
-                        >
-                          {req.status}
-                        </span>
-                      </td>
-
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedRequest(req)}
-                          style={{
-                            padding: '5px 12px',
-                            borderRadius: '6px',
-                            border: '1px solid #CBD5E1',
-                            backgroundColor: '#FFFFFF',
-                            color: '#7C3AED',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {req.status === 'Pending' ? 'Review & Decide' : 'View Audit'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* -------------------------------------------------------------------- */}
-      {/* AUDIT & DECISION DRAWER */}
-      {/* -------------------------------------------------------------------- */}
-      {selectedRequest && (
-        <SideDrawer
-          isOpen={!!selectedRequest}
-          onClose={() => {
-            setSelectedRequest(null);
-            setDecisionType(null);
-          }}
-          title={`Approval Audit: ${selectedRequest.requestType}`}
-          subtitle={`Partner: ${selectedRequest.partnerName} (${selectedRequest.partnerCode})`}
-          size="lg"
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '14px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', marginBottom: '6px' }}>
-                Application Details & Context
-              </div>
-              <div style={{ fontSize: '12.5px', color: '#64748B', lineHeight: '1.5' }}>
-                {selectedRequest.description}
-              </div>
-              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #CBD5E1', fontSize: '12px' }}>
-                <span style={{ color: '#64748B' }}>Business Justification: </span>
-                <strong style={{ color: '#0F172A' }}>{selectedRequest.justification}</strong>
-              </div>
-            </div>
-
-            {/* Variance Comparison Box */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '12px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
-                  Standard / Previous Baseline
-                </div>
-                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
-                  <div>Discount: <strong>{selectedRequest.previousValues?.discountPercent ?? 'Default'}%</strong></div>
-                  <div>Credit Limit: <strong>₹{selectedRequest.previousValues?.creditLimit?.toLocaleString() ?? 'Default'}</strong></div>
-                  <div>Credit Period: <strong>{selectedRequest.previousValues?.creditPeriodDays ?? 'Default'} Days</strong></div>
-                </div>
-              </div>
-
-              <div style={{ backgroundColor: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: '8px', padding: '12px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase' }}>
-                  Proposed Concession / Variance
-                </div>
-                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
-                  <div>Discount: <strong style={{ color: '#7C3AED' }}>{selectedRequest.proposedValues.discountPercent ?? 'Unchanged'}%</strong></div>
-                  <div>Credit Limit: <strong style={{ color: '#7C3AED' }}>₹{selectedRequest.proposedValues.creditLimit?.toLocaleString() ?? 'Unchanged'}</strong></div>
-                  <div>Credit Period: <strong style={{ color: '#7C3AED' }}>{selectedRequest.proposedValues.creditPeriodDays ?? 'Unchanged'} Days</strong></div>
-                </div>
-              </div>
-            </div>
-
-            {/* Decision Input if Pending */}
-            {selectedRequest.status === 'Pending' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid #E2E8F0', paddingTop: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155' }}>
-                  Commercial Decision Notes
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Enter decision rationale or conditions attached to this authorization..."
-                  value={decisionNotes}
-                  onChange={(e) => setDecisionNotes(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', resize: 'vertical' }}
-                />
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDecisionType('Reject');
-                      handleExecuteDecision();
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 16px',
-                      borderRadius: '6px',
-                      border: '1px solid #FECACA',
-                      backgroundColor: '#FEF2F2',
-                      color: '#DC2626',
-                      fontSize: '12.5px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <XCircle size={15} />
-                    <span>Reject Request</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDecisionType('Approve');
-                      handleExecuteDecision();
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 18px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      backgroundColor: '#10B981',
-                      color: '#FFFFFF',
-                      fontSize: '12.5px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <CheckCircle2 size={15} />
-                    <span>Authorize & Approve</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '8px', padding: '12px', fontSize: '12px', color: '#166534' }}>
-                Decision logged by <strong>{selectedRequest.decisionBy || 'Commercial Director'}</strong> on{' '}
-                {selectedRequest.decisionAt ? new Date(selectedRequest.decisionAt).toLocaleDateString() : 'Recent'}:{' '}
-                "{selectedRequest.decisionNotes || 'Approved'}"
-              </div>
-            )}
-          </div>
-        </SideDrawer>
+      {view && (
+        <ApprovalDetailModal
+          req={approvals.find((a) => a.id === view.id) ?? view}
+          categoryLabel={catLabel(view.category)}
+          partner={partners.find((p) => p.id === view.partnerId) ?? null}
+          config={configQ.data}
+          canApprove={can.approve}
+          onClose={() => setView(null)}
+          onDecide={(mode) => { setDecision({ req: approvals.find((a) => a.id === view.id) ?? view, mode }); setView(null); }}
+        />
       )}
-    </div>
+      {decision && (
+        <DecisionModal
+          req={decision.req}
+          mode={decision.mode}
+          categoryLabel={catLabel(decision.req.category)}
+          pending={pending}
+          onCancel={() => setDecision(null)}
+          onSubmit={async (c) => { if (await decide(decision.req, decision.mode, c)) setDecision(null); }}
+        />
+      )}
+    </>
   );
 };
+
+export default ApprovalsPage;

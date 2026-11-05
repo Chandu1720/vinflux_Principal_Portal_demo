@@ -1,4 +1,5 @@
 import type {
+  IndustryPack,
   Product,
   Portfolio,
   ProductType,
@@ -25,6 +26,18 @@ export const initialCurrentUser: CurrentUser = {
   }
 };
 
+/** Demo users — switch from the sidebar to show maker-checker (one creates, the other approves). */
+export const initialUsers: CurrentUser[] = [
+  initialCurrentUser,
+  {
+    id: "usr-002",
+    name: "Priya Menon",
+    role: "Product Executive",
+    organization: "Biorad Medisys Private Limited",
+    permissions: { canManageConfig: false, canApproveProducts: false, canPublishProducts: true, canRetireProducts: false }
+  }
+];
+
 export const initialPrincipals: Principal[] = [
   { id: "princ-biorad", name: "Biorad Medisys Private Limited", code: "BIORAD-MED", country: "India", role: "Manufacturer & Principal" },
   { id: "princ-zimmer", name: "Apex Surgical Ortho GmbH", code: "APEX-ORTHO", country: "Germany", role: "Technology Principal" },
@@ -32,6 +45,7 @@ export const initialPrincipals: Principal[] = [
 ];
 
 export const initialPortfolios: Portfolio[] = [
+
   {
     id: "port-arthro",
     name: "Arthroplasty — Joint Replacement",
@@ -132,6 +146,20 @@ export const initialPortfolios: Portfolio[] = [
         ]
       }
     ]
+  },
+  {
+    id: "port-consumer",
+    name: "Consumer Products (FMCG)",
+    code: "PORT-FMCG",
+    description: "Packaged food, personal care and home care",
+    categories: [
+      { id: "cat-hpc", name: "Personal & Home Care", code: "CAT-HPC", description: "Hand wash, sanitation and hygiene", subCategories: [
+        { id: "sub-handwash", name: "Hand Wash", code: "SUB-HW", description: "Liquid hand wash and refills" }
+      ] },
+      { id: "cat-food", name: "Packaged Food", code: "CAT-FOOD", description: "Nutrition and snacks", subCategories: [
+        { id: "sub-nutrition", name: "Nutrition Drinks", code: "SUB-NUT", description: "Powdered nutrition and health drinks" }
+      ] }
+    ]
   }
 ];
 
@@ -147,7 +175,8 @@ export const initialProductTypes: ProductType[] = [
     requiresRegulatoryDossier: true,
     variantAllowed: true,
     attributeTemplate: "tpl-implant",
-    defaultMinStockThreshold: 50
+    defaultMinStockThreshold: 50,
+    industryPackId: "medical-devices"
   },
   {
     id: "type-equipment",
@@ -160,7 +189,8 @@ export const initialProductTypes: ProductType[] = [
     requiresRegulatoryDossier: true,
     variantAllowed: false,
     attributeTemplate: "tpl-equipment",
-    defaultMinStockThreshold: 5
+    defaultMinStockThreshold: 5,
+    industryPackId: "medical-devices"
   },
   {
     id: "type-consumable",
@@ -173,7 +203,8 @@ export const initialProductTypes: ProductType[] = [
     requiresRegulatoryDossier: true,
     variantAllowed: true,
     attributeTemplate: "tpl-consumable",
-    defaultMinStockThreshold: 200
+    defaultMinStockThreshold: 200,
+    industryPackId: "medical-devices"
   },
   {
     id: "type-digital",
@@ -186,7 +217,8 @@ export const initialProductTypes: ProductType[] = [
     requiresRegulatoryDossier: false,
     variantAllowed: false,
     attributeTemplate: "tpl-digital",
-    defaultMinStockThreshold: 0
+    defaultMinStockThreshold: 0,
+    industryPackId: "general"
   },
   {
     id: "type-service",
@@ -199,8 +231,19 @@ export const initialProductTypes: ProductType[] = [
     requiresRegulatoryDossier: false,
     variantAllowed: false,
     attributeTemplate: "tpl-service",
-    defaultMinStockThreshold: 0
-  }
+    defaultMinStockThreshold: 0,
+    industryPackId: "general"
+  },
+  { id: "type-instrument", name: "Surgical Instrument Set", code: "INSTR-SET", nature: "Physical Asset", defaultTracking: "Serial", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: true, variantAllowed: false, attributeTemplate: "tpl-instrument", defaultMinStockThreshold: 2, industryPackId: "medical-devices" },
+  { id: "type-fmcg-food", name: "Packaged Food & Beverage", code: "FMCG-FOOD", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-fmcg-food", defaultMinStockThreshold: 200, industryPackId: "fmcg" },
+  { id: "type-fmcg-home", name: "Personal & Home Care", code: "FMCG-HPC", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-fmcg-home", defaultMinStockThreshold: 200, industryPackId: "fmcg" },
+  { id: "type-general", name: "General Merchandise", code: "GENERAL", nature: "Physical Goods", defaultTracking: "None", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-general", defaultMinStockThreshold: 20, industryPackId: "general" }
+];
+
+export const initialIndustryPacks: IndustryPack[] = [
+  { id: "medical-devices", name: "Medical Devices", description: "CDSCO risk class & licence, UDI, implantable / sterile, instrument sets", enabled: true, regulatory: "cdsco", defaultTracking: "Batch + Serial", defaultHsn: "90213100", defaultTax: "5%" },
+  { id: "fmcg", name: "FMCG (food, personal & home care)", description: "Legal Metrology declarations (net quantity, MRP, consumer care), FSSAI for food, shelf life, case pack", enabled: true, regulatory: "legal-metrology", defaultTracking: "Batch / Lot", defaultHsn: "", defaultTax: "18%" },
+  { id: "general", name: "General Merchandise", description: "Any other goods, software and services — common fields only", enabled: true, regulatory: null, defaultTracking: "None", defaultHsn: "", defaultTax: "18%" },
 ];
 
 export const initialProductTemplates: ProductTemplate[] = [
@@ -256,6 +299,29 @@ export const initialAttributeTemplates: Record<string, AttributeDefinition[]> = 
     { id: "attr-dim", name: "Pad Dimensions", type: "select", options: ["5 x 5 cm", "10 x 10 cm", "10 x 20 cm"], required: true, isVariant: true, group: "Dimensional Parameters" },
     { id: "attr-absorb", name: "Hemostatic Absorption Speed", type: "select", options: ["Under 2 minutes", "3 - 5 minutes", "Immediate matrix bind"], required: true, isVariant: false, group: "Clinical Efficacy" }
   ],
+  "tpl-instrument": [
+    { id: "attr-material", name: "Biomaterial", type: "select", options: ["Titanium Alloy (Ti-6Al-4V)", "Stainless Steel 316L", "Polymer (PEEK)"], required: true, isVariant: false, group: "Technical Specifications" },
+    { id: "attr-sterility", name: "Sterilization Mode", type: "select", options: ["Gamma Radiation (25 kGy)", "Ethylene Oxide (EtO)", "Autoclave / Steam"], required: true, isVariant: false, group: "Compliance & Sterility" },
+    { id: "attr-tray", name: "Tray / Case", type: "text", defaultValue: "Autoclavable tray with lid", required: false, isVariant: false, group: "Packaging" }
+  ],
+  "tpl-fmcg-food": [
+    { id: "attr-flavour", name: "Flavour / Variant", type: "select", options: ["Original", "Masala", "Mint", "Chocolate", "Unflavoured"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-pack-size", name: "Pack Size", type: "select", options: ["50 g", "100 g", "200 g", "500 g", "1 kg", "200 ml", "500 ml", "1 L"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-pack-type", name: "Packaging Type", type: "select", options: ["Pouch", "Jar", "Carton", "Bottle", "Can"], required: true, isVariant: false, group: "Packaging" },
+    { id: "attr-storage", name: "Storage", type: "select", options: ["Ambient", "Chilled (2–8 °C)", "Frozen (−18 °C)"], required: true, isVariant: false, group: "Handling" }
+  ],
+  "tpl-fmcg-home": [
+    { id: "attr-fragrance", name: "Fragrance / Variant", type: "select", options: ["Lemon", "Lavender", "Neem", "Aloe Vera", "Unscented"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-pack-size", name: "Pack Size", type: "select", options: ["100 ml", "200 ml", "500 ml", "750 ml", "1 L", "5 L"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-pack-type", name: "Packaging Type", type: "select", options: ["Pump Bottle", "Refill Pouch", "Tube", "Can"], required: true, isVariant: false, group: "Packaging" },
+    { id: "attr-skin", name: "Suitable For", type: "text", defaultValue: "All skin types", required: false, isVariant: false, group: "Usage" }
+  ],
+  "tpl-general": [
+    { id: "attr-colour", name: "Colour", type: "text", required: false, isVariant: true, group: "Variant" },
+    { id: "attr-gsize", name: "Size", type: "text", required: false, isVariant: true, group: "Variant" },
+    { id: "attr-gmaterial", name: "Material", type: "text", required: false, isVariant: false, group: "Specification" },
+    { id: "attr-warranty", name: "Warranty (months)", type: "number", required: false, isVariant: false, group: "Specification" }
+  ],
   "tpl-digital": [
     { id: "attr-seat-type", name: "License Concurrency", type: "select", options: ["Single Named Surgeon", "Floating Hospital Seat", "Site Enterprise Unlimited"], required: true, isVariant: false, group: "Licensing Parameters" },
     { id: "attr-cloud-region", name: "HIPAA Cloud Region", type: "select", options: ["Asia-South (Mumbai)", "US-East (N. Virginia)", "EU-Central (Frankfurt)"], required: true, isVariant: false, group: "Deployment" }
@@ -273,7 +339,14 @@ export const initialValidationRules: ValidationRule[] = [
   { id: "val-udi", name: "Mandatory UDI for Implantable Devices", rule: "If Product Type = Implant, UDI-DI is required before approval", enforced: true, severity: "Blocking Error" },
   { id: "val-hsn", name: "HSN / Commodity Code Required", rule: "8-digit HSN code required for all physical stockable goods", enforced: true, severity: "Blocking Error" },
   { id: "val-uom-conv", name: "Packaging UOM Factor Consistency", rule: "Outer pack factor must be exact integer multiple of inner pack factor", enforced: true, severity: "Warning" },
-  { id: "val-unique-code", name: "Global Master Code Uniqueness", rule: "Product Code and primary GTIN must be globally unique across principals", enforced: true, severity: "Blocking Error" }
+  { id: "val-unique-code", name: "Global Master Code Uniqueness", rule: "Product Code and primary GTIN must be globally unique across principals", enforced: true, severity: "Blocking Error" },
+  { id: "val-gs1-check", name: "GS1 Check Digit", rule: "Every GTIN (product, variant, packaging level) must carry a valid GS1 check digit", enforced: true, severity: "Blocking Error" },
+  { id: "val-licence", name: "Valid CDSCO Licence", rule: "Products need a licence of the right form for their risk class (MD-5 for A/B, MD-9 for C/D, MD-15 if imported), valid on the approval date", enforced: true, severity: "Blocking Error" },
+  { id: "val-price-ceiling", name: "MRP Within Government Ceiling", rule: "Where a DPCO / NPPA ceiling applies, MRP must not exceed it", enforced: true, severity: "Blocking Error" },
+  { id: "val-maker-checker", name: "Maker-Checker", rule: "The person who submits a product cannot approve it", enforced: true, severity: "Blocking Error" },
+  { id: "val-legal-metrology", name: "Legal Metrology Declarations (FMCG)", rule: "Packaged goods need net quantity, MRP, country of origin and consumer-care details", enforced: true, severity: "Blocking Error" },
+  { id: "val-fssai", name: "FSSAI Licence (Food)", rule: "Food products need a valid 14-digit FSSAI licence, veg / non-veg mark and shelf life", enforced: true, severity: "Blocking Error" },
+  { id: "val-required-attrs", name: "Required Attributes", rule: "Attributes marked required in the product type template must be filled", enforced: true, severity: "Blocking Error" }
 ];
 
 export const initialUomPackagingDefaults: UomPackagingDefault[] = [
@@ -352,22 +425,22 @@ export const initialProducts: Product[] = [
       }
     },
     variants: [
-      { id: "VAR-001-A", sku: "EVO-TRAY-SZ2-10L", name: "Tray Augment Sz 2 / 10mm / Left", size: "Size 2", thickness: "10 mm", side: "Left", status: "Active", gtin: "08903209039201" },
-      { id: "VAR-001-B", sku: "EVO-TRAY-SZ2-10R", name: "Tray Augment Sz 2 / 10mm / Right", size: "Size 2", thickness: "10 mm", side: "Right", status: "Active", gtin: "08903209039202" },
-      { id: "VAR-001-C", sku: "EVO-TRAY-SZ3-10L", name: "Tray Augment Sz 3 / 10mm / Left", size: "Size 3", thickness: "10 mm", side: "Left", status: "Active", gtin: "08903209039234" },
-      { id: "VAR-001-D", sku: "EVO-TRAY-SZ3-10R", name: "Tray Augment Sz 3 / 10mm / Right", size: "Size 3", thickness: "10 mm", side: "Right", status: "Active", gtin: "08903209039235" },
-      { id: "VAR-001-E", sku: "EVO-TRAY-SZ3-15L", name: "Tray Augment Sz 3 / 15mm / Left", size: "Size 3", thickness: "15 mm", side: "Left", status: "Active", gtin: "08903209039236" },
-      { id: "VAR-001-F", sku: "EVO-TRAY-SZ4-10L", name: "Tray Augment Sz 4 / 10mm / Left", size: "Size 4", thickness: "10 mm", side: "Left", status: "Draft", gtin: "08903209039241" }
+      { id: "VAR-001-A", sku: "EVO-TRAY-SZ2-10L", name: "Tray Augment Sz 2 / 10mm / Left", size: "Size 2", thickness: "10 mm", side: "Left", status: "Active", gtin: "08903209039203" },
+      { id: "VAR-001-B", sku: "EVO-TRAY-SZ2-10R", name: "Tray Augment Sz 2 / 10mm / Right", size: "Size 2", thickness: "10 mm", side: "Right", status: "Active", gtin: "08903209039210" },
+      { id: "VAR-001-C", sku: "EVO-TRAY-SZ3-10L", name: "Tray Augment Sz 3 / 10mm / Left", size: "Size 3", thickness: "10 mm", side: "Left", status: "Active", gtin: "08903209039241" },
+      { id: "VAR-001-D", sku: "EVO-TRAY-SZ3-10R", name: "Tray Augment Sz 3 / 10mm / Right", size: "Size 3", thickness: "10 mm", side: "Right", status: "Active", gtin: "08903209039258" },
+      { id: "VAR-001-E", sku: "EVO-TRAY-SZ3-15L", name: "Tray Augment Sz 3 / 15mm / Left", size: "Size 3", thickness: "15 mm", side: "Left", status: "Active", gtin: "08903209039265" },
+      { id: "VAR-001-F", sku: "EVO-TRAY-SZ4-10L", name: "Tray Augment Sz 4 / 10mm / Left", size: "Size 4", thickness: "10 mm", side: "Left", status: "Draft", gtin: "08903209039272" }
     ],
     identifiers: [
-      { type: "GS1-128 / GTIN", value: "08903209039234", isPrimary: true, uom: "Each (Unit)", source: "Manufacturer GS1 Registry", status: "Active" },
-      { type: "FDA / MDR UDI-DI", value: "D-08903209039234-A1", isPrimary: false, uom: "Each (Unit)", source: "EUDAMED / GUDID", status: "Active" },
+      { type: "GS1-128 / GTIN", value: "08903209039241", isPrimary: true, uom: "Each (Unit)", source: "Manufacturer GS1 Registry", status: "Active" },
+      { type: "FDA / MDR UDI-DI", value: "D-08903209039241-A1", isPrimary: false, uom: "Each (Unit)", source: "EUDAMED / GUDID", status: "Active" },
       { type: "GS1 DataMatrix", value: "(01)08903209039234(17)311231(10)LOT8891(21)SN772910", isPrimary: false, uom: "Each (Unit)", source: "Direct Laser Etching", status: "Active" },
       { type: "Carton GTIN-14", value: "18903209039231", isPrimary: false, uom: "Shipper Carton (20 Units)", source: "VinFlux Auto-Gen", status: "Active" }
     ],
     uomHierarchy: [
-      { level: "Unit / Each", uom: "Each", factor: 1, isBase: true, isSales: true, isPurchase: false, dimensions: "12 x 8 x 3 cm", weight: "180 g", barcode: "08903209039234" },
-      { level: "Inner Sterile Box", uom: "Box (5 Each)", factor: 5, isBase: false, isSales: true, isPurchase: false, dimensions: "25 x 18 x 14 cm", weight: "1.1 kg", barcode: "08903209039258" },
+      { level: "Unit / Each", uom: "Each", factor: 1, isBase: true, isSales: true, isPurchase: false, dimensions: "12 x 8 x 3 cm", weight: "180 g", barcode: "08903209039241" },
+      { level: "Inner Sterile Box", uom: "Box (5 Each)", factor: 5, isBase: false, isSales: true, isPurchase: false, dimensions: "25 x 18 x 14 cm", weight: "1.1 kg", barcode: "08903209039289" },
       { level: "Shipper Carton", uom: "Carton (20 Each)", factor: 20, isBase: false, isSales: false, isPurchase: true, dimensions: "55 x 40 x 30 cm", weight: "4.8 kg", barcode: "18903209039231" }
     ],
     trackingRules: {
@@ -404,7 +477,7 @@ export const initialProducts: Product[] = [
     integrationMapping: [
       { system: "SAP S/4HANA Enterprise", entityType: "Material Master", externalId: "MAT-SAP-994820", status: "Synchronized", lastSync: "2026-10-28 16:40", mappingDirection: "Bi-directional" },
       { system: "GS1 Global Registry", entityType: "GTIN Barcode Record", externalId: "8903209039234", status: "Synchronized", lastSync: "2026-10-25 11:20", mappingDirection: "Outbound" },
-      { system: "EUDAMED Medical DB", entityType: "Basic UDI-DI Dossier", externalId: "D-08903209039234-A1", status: "Synchronized", lastSync: "2026-10-20 14:00", mappingDirection: "Outbound" }
+      { system: "EUDAMED Medical DB", entityType: "Basic UDI-DI Dossier", externalId: "D-08903209039241-A1", status: "Synchronized", lastSync: "2026-10-20 14:00", mappingDirection: "Outbound" }
     ],
     changeHistory: [
       { field: "Tax Classification", prevValue: "HSN 90211000 (12%)", newValue: "HSN 90213100 (5%)", changedBy: "Sunil K. (Tax Compliance)", changedAt: "2026-10-26 14:32", reason: "Updated to aligned orthopaedic artificial joints classification" },
@@ -415,7 +488,7 @@ export const initialProducts: Product[] = [
   {
     id: "PRD-ROBO-002",
     name: "Smart Torque Digital Surgical Driver V4 (High-Speed Autoclavable)",
-    code: "8904101902811",
+    code: "8904101902817",
     description: "Brushless digital surgical bone driver with live brushless torque feedback and telemetry logging for orthopaedic reconstructive surgeries.",
     portfolioId: "port-robotics",
     categoryId: "cat-power-tools",
@@ -458,14 +531,14 @@ export const initialProducts: Product[] = [
       }
     },
     variants: [
-      { id: "VAR-002-A", sku: "OMNI-DRV-V4-KIT", name: "Driver Console + 2 Li-Ion Cells", size: "Standard", thickness: "N/A", side: "Universal", status: "Active", gtin: "8904101902811" }
+      { id: "VAR-002-A", sku: "OMNI-DRV-V4-KIT", name: "Driver Console + 2 Li-Ion Cells", size: "Standard", thickness: "N/A", side: "Universal", status: "Active", gtin: "8904101902817" }
     ],
     identifiers: [
-      { type: "GS1-128 / GTIN", value: "8904101902811", isPrimary: true, uom: "Set / Tray", source: "Manufacturer GS1", status: "Active" },
+      { type: "GS1-128 / GTIN", value: "8904101902817", isPrimary: true, uom: "Set / Tray", source: "Manufacturer GS1", status: "Active" },
       { type: "Serial Number RFID", value: "EPC-96-OMNI-2026-00412", isPrimary: false, uom: "Set / Tray", source: "Asset Tag", status: "Active" }
     ],
     uomHierarchy: [
-      { level: "Unit / Kit", uom: "Set / Tray", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "40 x 30 x 18 cm", weight: "3.2 kg", barcode: "8904101902811" }
+      { level: "Unit / Kit", uom: "Set / Tray", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "40 x 30 x 18 cm", weight: "3.2 kg", barcode: "8904101902817" }
     ],
     trackingRules: {
       mode: "Serial",
@@ -504,7 +577,7 @@ export const initialProducts: Product[] = [
   {
     id: "PRD-CSM-003",
     name: "Sterile Bio-Resorbable Hemostatic Gauze 10x10cm (Matrix Pad)",
-    code: "8906001248092",
+    code: "8906001248095",
     description: "Oxidized regenerated cellulose absorbent hemostat for intraoperative bleeding control during orthopedic and general surgery.",
     portfolioId: "port-consumables",
     categoryId: "cat-hemostats",
@@ -546,17 +619,17 @@ export const initialProducts: Product[] = [
       }
     },
     variants: [
-      { id: "VAR-003-A", sku: "BIO-GAUZE-5X5", name: "Pad 5 x 5 cm (Box of 10)", size: "5 x 5 cm", thickness: "N/A", side: "Universal", status: "Active", gtin: "8906001248085" },
-      { id: "VAR-003-B", sku: "BIO-GAUZE-10X10", name: "Pad 10 x 10 cm (Box of 10)", size: "10 x 10 cm", thickness: "N/A", side: "Universal", status: "Active", gtin: "8906001248092" },
-      { id: "VAR-003-C", sku: "BIO-GAUZE-10X20", name: "Pad 10 x 20 cm (Box of 5)", size: "10 x 20 cm", thickness: "N/A", side: "Universal", status: "Active", gtin: "8906001248108" }
+      { id: "VAR-003-A", sku: "BIO-GAUZE-5X5", name: "Pad 5 x 5 cm (Box of 10)", size: "5 x 5 cm", thickness: "N/A", side: "Universal", status: "Active", gtin: "8906001248088" },
+      { id: "VAR-003-B", sku: "BIO-GAUZE-10X10", name: "Pad 10 x 10 cm (Box of 10)", size: "10 x 10 cm", thickness: "N/A", side: "Universal", status: "Active", gtin: "8906001248095" },
+      { id: "VAR-003-C", sku: "BIO-GAUZE-10X20", name: "Pad 10 x 20 cm (Box of 5)", size: "10 x 20 cm", thickness: "N/A", side: "Universal", status: "Active", gtin: "8906001248101" }
     ],
     identifiers: [
-      { type: "GS1-128 / GTIN", value: "8906001248092", isPrimary: true, uom: "Pack (10 Units)", source: "GS1 India", status: "Active" }
+      { type: "GS1-128 / GTIN", value: "8906001248095", isPrimary: true, uom: "Pack (10 Units)", source: "GS1 India", status: "Active" }
     ],
     uomHierarchy: [
       { level: "Unit Foil Pouch", uom: "Pack", factor: 1, isBase: true, isSales: false, isPurchase: false, dimensions: "12 x 12 cm", weight: "12 g", barcode: "8906001248092-F" },
-      { level: "Sales Dispenser Box", uom: "Box (10 Each)", factor: 10, isBase: false, isSales: true, isPurchase: false, dimensions: "15 x 15 x 6 cm", weight: "180 g", barcode: "8906001248092" },
-      { level: "Shipper Master Case", uom: "Carton (20 Each)", factor: 200, isBase: false, isSales: false, isPurchase: true, dimensions: "40 x 35 x 30 cm", weight: "4.2 kg", barcode: "18906001248099" }
+      { level: "Sales Dispenser Box", uom: "Box (10 Each)", factor: 10, isBase: false, isSales: true, isPurchase: false, dimensions: "15 x 15 x 6 cm", weight: "180 g", barcode: "8906001248095" },
+      { level: "Shipper Master Case", uom: "Carton (20 Each)", factor: 200, isBase: false, isSales: false, isPurchase: true, dimensions: "40 x 35 x 30 cm", weight: "4.2 kg", barcode: "18906001248092" }
     ],
     trackingRules: {
       mode: "Batch / Lot",
@@ -595,7 +668,7 @@ export const initialProducts: Product[] = [
   {
     id: "PRD-DGT-004",
     name: "VinFlux AI 3D Knee Pre-Operative Trajectory Planning Cloud License (Annual)",
-    code: "8909988112345",
+    code: "8909988112342",
     description: "Cloud-based AI anatomical segmentation and 3D implant positioning algorithm license for joint reconstruction orthopaedic surgeons.",
     portfolioId: "port-digital",
     categoryId: "cat-planning-sw",
@@ -637,13 +710,13 @@ export const initialProducts: Product[] = [
       }
     },
     variants: [
-      { id: "VAR-004-A", sku: "VFLUX-SW-ANNUAL-1S", name: "1-Year Single Surgeon Cloud License", size: "Standard", thickness: "N/A", side: "Universal", status: "Active", gtin: "8909988112345" }
+      { id: "VAR-004-A", sku: "VFLUX-SW-ANNUAL-1S", name: "1-Year Single Surgeon Cloud License", size: "Standard", thickness: "N/A", side: "Universal", status: "Active", gtin: "8909988112342" }
     ],
     identifiers: [
-      { type: "Digital SKU Code", value: "8909988112345", isPrimary: true, uom: "License", source: "Internal Engine", status: "Active" }
+      { type: "Digital SKU Code", value: "8909988112342", isPrimary: true, uom: "License", source: "Internal Engine", status: "Active" }
     ],
     uomHierarchy: [
-      { level: "Electronic Key", uom: "License", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "N/A (Electronic Delivery)", weight: "0 g", barcode: "8909988112345" }
+      { level: "Electronic Key", uom: "License", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "N/A (Electronic Delivery)", weight: "0 g", barcode: "8909988112342" }
     ],
     trackingRules: {
       mode: "None",
@@ -682,14 +755,14 @@ export const initialProducts: Product[] = [
   {
     id: "PRD-EVOCON-005",
     name: "Genius Evocon Modular Revision Instrument Set (Titanium Tray Reamers & Trials)",
-    code: "8903209041122",
+    code: "8903209041121",
     description: "Reusable surgical instrument kit containing sizing trials, cutting guides, and augment tampers for revision knee surgery. Autoclave tray included.",
     portfolioId: "port-arthro",
     categoryId: "cat-tkr",
     subCategoryId: "sub-knee-rev",
     principalId: "princ-biorad",
     brand: "Genius Evocon",
-    productTypeId: "type-equipment",
+    productTypeId: "type-instrument",
     baseUom: "Set / Tray",
     lifecycleStatus: "Pending Approval",
     approvalStatus: "Pending Approval",
@@ -724,13 +797,13 @@ export const initialProducts: Product[] = [
       }
     },
     variants: [
-      { id: "VAR-005-A", sku: "EVO-INST-REV-SET", name: "Revision Knee Instrument Set Full Case", size: "Standard", thickness: "N/A", side: "Universal", status: "Pending", gtin: "8903209041122" }
+      { id: "VAR-005-A", sku: "EVO-INST-REV-SET", name: "Revision Knee Instrument Set Full Case", size: "Standard", thickness: "N/A", side: "Universal", status: "Pending", gtin: "8903209041121" }
     ],
     identifiers: [
-      { type: "GS1-128 / GTIN", value: "8903209041122", isPrimary: true, uom: "Set / Tray", source: "GS1 India", status: "Active" }
+      { type: "GS1-128 / GTIN", value: "8903209041121", isPrimary: true, uom: "Set / Tray", source: "GS1 India", status: "Active" }
     ],
     uomHierarchy: [
-      { level: "Instrument Case", uom: "Set / Tray", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "60 x 30 x 15 cm", weight: "8.5 kg", barcode: "8903209041122" }
+      { level: "Instrument Case", uom: "Set / Tray", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "60 x 30 x 15 cm", weight: "8.5 kg", barcode: "8903209041121" }
     ],
     trackingRules: {
       mode: "Serial",
@@ -769,7 +842,7 @@ export const initialProducts: Product[] = [
   {
     id: "PRD-EVOCON-006",
     name: "Genius Revision Femoral Stem Extension 150mm x 14mm Fluted",
-    code: "8903209045588",
+    code: "8903209045587",
     description: "Straight fluted revision stem extension for stable intramedullary fixation during complex femoral reconstructive surgeries.",
     portfolioId: "port-arthro",
     categoryId: "cat-tkr",
@@ -815,14 +888,14 @@ export const initialProducts: Product[] = [
       }
     },
     variants: [
-      { id: "VAR-006-A", sku: "EVO-STEM-150-12", name: "Stem 150mm / Dia 12mm", size: "12 mm", thickness: "150 mm", side: "Universal", status: "Draft", gtin: "8903209045581" },
-      { id: "VAR-006-B", sku: "EVO-STEM-150-14", name: "Stem 150mm / Dia 14mm", size: "14 mm", thickness: "150 mm", side: "Universal", status: "Draft", gtin: "8903209045588" }
+      { id: "VAR-006-A", sku: "EVO-STEM-150-12", name: "Stem 150mm / Dia 12mm", size: "12 mm", thickness: "150 mm", side: "Universal", status: "Draft", gtin: "8903209045594" },
+      { id: "VAR-006-B", sku: "EVO-STEM-150-14", name: "Stem 150mm / Dia 14mm", size: "14 mm", thickness: "150 mm", side: "Universal", status: "Draft", gtin: "8903209045587" }
     ],
     identifiers: [
-      { type: "GS1-128 / GTIN", value: "8903209045588", isPrimary: true, uom: "Each", source: "VinFlux Identifier Pool", status: "Draft" }
+      { type: "GS1-128 / GTIN", value: "8903209045587", isPrimary: true, uom: "Each", source: "VinFlux Identifier Pool", status: "Draft" }
     ],
     uomHierarchy: [
-      { level: "Unit Foil Carton", uom: "Each", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "24 x 8 x 5 cm", weight: "240 g", barcode: "8903209045588" }
+      { level: "Unit Foil Carton", uom: "Each", factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "24 x 8 x 5 cm", weight: "240 g", barcode: "8903209045587" }
     ],
     trackingRules: {
       mode: "Batch + Serial",
@@ -857,3 +930,80 @@ export const initialProducts: Product[] = [
     ]
   }
 ];
+
+/* Regulatory registration (CDSCO, MDR 2017), kits and maker-checker trail for the demo catalogue. */
+const REG: Record<string, Product['regulatory']> = {
+  "PRD-EVOCON-001": { riskClass: "C", licenceType: "Manufacturing (MD-9)", licenceNo: "MFG/MD/2023/000412", licenceValidUntil: "2028-03-31", implantable: true, sterile: true, shelfLifeMonths: 60 },
+  "PRD-ROBO-002": { riskClass: "C", licenceType: "Import (MD-15)", licenceNo: "IMP/MD/2024/001187", licenceValidUntil: "2026-12-15", implantable: false, sterile: false, shelfLifeMonths: null },
+  "PRD-CSM-003": { riskClass: "A", licenceType: "Manufacturing (MD-5)", licenceNo: "MFG/MD/TS/2022/0091", licenceValidUntil: "2027-06-30", implantable: false, sterile: true, shelfLifeMonths: 36 },
+  "PRD-DGT-004": { riskClass: "B", licenceType: "Manufacturing (MD-5)", licenceNo: "MFG/MD/TS/2024/0144", licenceValidUntil: "2029-01-31", implantable: false, sterile: false, shelfLifeMonths: null },
+  "PRD-EVOCON-005": { riskClass: "A", licenceType: "Manufacturing (MD-5)", licenceNo: "MFG/MD/TS/2023/0102", licenceValidUntil: "2028-03-31", implantable: false, sterile: false, shelfLifeMonths: null },
+  "PRD-EVOCON-006": { riskClass: "C", licenceType: "Manufacturing (MD-9)", licenceNo: "MFG/MD/2023/000412", licenceValidUntil: "2028-03-31", implantable: true, sterile: true, shelfLifeMonths: 60 },
+};
+initialProducts.forEach((p) => {
+  p.regulatory = REG[p.id];
+  if (p.lifecycleStatus === "Pending Approval") { p.submittedBy = "K. Mohan (Clinical Engineer)"; p.submittedAt = "2026-10-30"; }
+  if (p.approvalStatus === "Approved") { p.approvedBy = "Dr. Arvind Rao"; p.approvedAt = p.updatedAt; }
+});
+const revisionSet = initialProducts.find((p) => p.id === "PRD-EVOCON-005");
+if (revisionSet) {
+  revisionSet.isKit = true;
+  revisionSet.kitComponents = [
+    { productId: "PRD-EVOCON-001", variantSku: "EVO-TRAY-SZ3-10L", qty: 1 },
+    { productId: "PRD-EVOCON-001", variantSku: "EVO-TRAY-SZ3-10R", qty: 1 },
+    { productId: "PRD-EVOCON-006", variantSku: "EVO-STEM-150-12", qty: 2 },
+  ];
+}
+
+/* FMCG demo product — shows the same Product Master serving a different industry pack. */
+const handWashBase = initialProducts.find((p) => p.id === "PRD-CSM-003");
+if (handWashBase) {
+  const hw: Product = JSON.parse(JSON.stringify(handWashBase));
+  Object.assign(hw, {
+    id: "PRD-FMCG-007",
+    name: "CareNest Liquid Hand Wash",
+    code: "8901234500019",
+    description: "Germ-protection liquid hand wash for homes, clinics and hospitals. Pump bottle and refill pouch.",
+    portfolioId: "port-consumer",
+    categoryId: "cat-hpc",
+    subCategoryId: "sub-handwash",
+    brand: "CareNest",
+    productTypeId: "type-fmcg-home",
+    baseUom: "Each",
+    lifecycleStatus: "Active",
+    approvalStatus: "Approved",
+    trackingMode: "Batch / Lot",
+    hsnCode: "34013019",
+    taxRate: "18%",
+    hasVariants: true,
+    variantCount: 3,
+    variantAxes: ["Fragrance / Variant", "Pack Size"],
+    attributes: { "attr-fragrance": "Lemon", "attr-pack-size": "200 ml", "attr-pack-type": "Pump Bottle", "attr-skin": "All skin types" },
+    variants: [
+      { id: "CN-HW-LEMON-200ML", sku: "CN-HW-LEMON-200ML", name: "CareNest Hand Wash Lemon 200 ml", size: "Lemon", thickness: "200 ml", side: "N/A", status: "Active", gtin: "8901234500026" },
+      { id: "CN-HW-LEMON-750ML", sku: "CN-HW-LEMON-750ML", name: "CareNest Hand Wash Lemon 750 ml Refill", size: "Lemon", thickness: "750 ml", side: "N/A", status: "Active", gtin: "8901234500033" },
+      { id: "CN-HW-NEEM-200ML", sku: "CN-HW-NEEM-200ML", name: "CareNest Hand Wash Neem 200 ml", size: "Neem", thickness: "200 ml", side: "N/A", status: "Active", gtin: "8901234500040" },
+    ],
+    identifiers: [
+      { type: "Internal SKU", value: "CN-HW", isPrimary: true, uom: "Product level", source: "VinFlux rule", status: "Active" },
+      { type: "GTIN", value: "8901234500019", isPrimary: false, uom: "Product level", source: "GS1 India", status: "Active" },
+    ],
+    uomHierarchy: [
+      { level: "Each", uom: "Each", factor: 1, isBase: true, isSales: true, isPurchase: false, dimensions: "7 × 5 × 18 cm", weight: "0.23 kg", barcode: "8901234500019" },
+      { level: "Case", uom: "Case (24)", factor: 24, isBase: false, isSales: false, isPurchase: true, dimensions: "40 × 30 × 20 cm", weight: "5.8 kg", barcode: "18901234500016" },
+    ],
+    trackingRules: { mode: "Batch / Lot", mfgDateRequired: true, expiryDateRequired: true, minShelfLifeDistributorDays: 540, minShelfLifeInstitutionDays: 365, udiDiRequired: false, qcInspectionRequired: true },
+    documents: [
+      { name: "Product Specification Sheet", type: "Technical Specification", version: "v1.2", effective: "2026-01-10", expiry: "", status: "Approved", size: "0.6 MB PDF" },
+    ],
+    pricingReference: { ...hw.pricingReference, mrp: 99, dealerTransferCap: 78, institutionalTenderCap: 70, govPriceCapEnforced: false, govNpddCeiling: undefined, marginFloorPercent: 12, priceListsLinked: ["FMCG General Trade"] },
+    regulatory: undefined,
+    fmcg: { netQuantity: 200, netQuantityUnit: "ml", shelfLifeMonths: 24, countryOfOrigin: "India", consumerCare: "1800-123-4567 · care@carenest.example", unitsPerCase: 24, isFood: false, fssaiLicenceNo: "", fssaiValidUntil: "", foodMark: "" },
+    isKit: false,
+    kitComponents: [],
+    updatedBy: "Dr. Arvind Rao",
+    approvedBy: "Dr. Arvind Rao",
+    changeHistory: [{ field: "Created", prevValue: "--", newValue: "Active", changedBy: "Dr. Arvind Rao", changedAt: "2026-10-15 10:00", reason: "FMCG range launch" }],
+  });
+  initialProducts.push(hw);
+}

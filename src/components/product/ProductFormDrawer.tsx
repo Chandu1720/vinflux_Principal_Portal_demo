@@ -5,8 +5,16 @@ import type {
   ProductIdentifier, 
   UomHierarchyItem, 
   ProductVariant, 
-  ProductDocument 
+  ProductDocument,
+  ProductRegulatory,
+  FmcgDetails,
+  IndustryPackId,
+  RiskClass,
+  LicenceType,
+  KitComponent
 } from '../../types/product.ts';
+import { gtinError, nextGtin13, normalise, packGtin14, usedGtins } from '../../utils/gs1.ts';
+import { checkProduct, licenceFormFor, packOf, todayISO } from '../../utils/productLifecycle.ts';
 import { 
   Package, 
   Trash2, 
@@ -21,6 +29,17 @@ import {
   CheckCircle2 
 } from 'lucide-react';
 
+const DEFAULT_AXES = [
+  { name: 'Size', values: [] as string[] },
+  { name: 'Thickness / Length', values: [] as string[] },
+  { name: 'Side', values: [] as string[] },
+];
+const DEFAULT_FMCG: FmcgDetails = { netQuantity: null, netQuantityUnit: 'ml', shelfLifeMonths: 24, countryOfOrigin: 'India', consumerCare: '', unitsPerCase: null, isFood: false, fssaiLicenceNo: '', fssaiValidUntil: '', foodMark: '' };
+const DEFAULT_REG: ProductRegulatory = { riskClass: 'C', licenceType: 'Manufacturing (MD-9)', licenceNo: '', licenceValidUntil: '', implantable: true, sterile: true, shelfLifeMonths: 60 };
+const uniq = (xs: string[]) => Array.from(new Set(xs.filter((x) => x && x !== 'N/A')));
+const prefixFromName = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase()).join('-') || 'SKU';
+const abbr = (v: string) => v.replace(/size/i, 'SZ').replace(/\s+/g, '').replace(/[^A-Za-z0-9.]/g, '').toUpperCase().slice(0, 8);
+
 interface ProductFormDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -32,7 +51,9 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
   onClose,
   editProductId
 }) => {
-  const { products, portfolios, productTypes, addProduct, updateProduct, showToast } = useApp();
+  const { products, portfolios, productTypes, addProduct, updateProduct, showToast, currentUser, activePrincipal, validationRules, attributeTemplates, industryPacks } = useApp();
+  const checkCtx = { productTypes, attributeTemplates };
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
   const isEditMode = Boolean(editProductId);
   const editingProduct = editProductId ? products.find((p) => p.id === editProductId) : null;
@@ -54,7 +75,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
     baseUom: 'Each',
     trackingMode: 'Batch + Serial',
     hsnCode: '90213100',
-    taxRate: '12% GST',
+    taxRate: '5%',
     sourceSystem: 'Manual Creation',
     lifecycleStatus: 'Active',
     approvalStatus: 'Approved',
@@ -67,9 +88,39 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
     documents: []
   });
 
-  // Variant Matrix state
+  // Industry pack of the selected product type drives the form.
+  const pack: IndustryPackId = packOf(formData.productTypeId, productTypes);
+  const currentType = productTypes.find((t) => t.id === formData.productTypeId);
+  const template = currentType ? attributeTemplates[currentType.attributeTemplate] ?? [] : [];
+  const templateAxes = template.filter((a) => a.isVariant).slice(0, 3);
+  const axesFor = (tplAxes: typeof templateAxes) => (tplAxes.length ? tplAxes.map((a) => ({ name: a.name, values: [] as string[] })) : DEFAULT_AXES);
+
+  /** Switching type applies the pack's defaults (tracking, tax, regulatory section) and the template's attributes. */
+  const changeProductType = (typeId: string) => {
+    const t = productTypes.find((x) => x.id === typeId);
+    const pk = industryPacks.find((x) => x.id === packOf(typeId, productTypes));
+    const tpl = t ? attributeTemplates[t.attributeTemplate] ?? [] : [];
+    const attrs: Record<string, string> = {};
+    tpl.forEach((a) => { if (a.defaultValue) attrs[a.id] = a.defaultValue; });
+    setFormData((prev) => ({
+      ...prev,
+      productTypeId: typeId,
+      trackingMode: (t?.defaultTracking as Product['trackingMode']) || pk?.defaultTracking || prev.trackingMode,
+      hsnCode: isEditMode ? prev.hsnCode : pk?.defaultHsn ?? prev.hsnCode,
+      taxRate: isEditMode ? prev.taxRate : pk?.defaultTax ?? prev.taxRate,
+      attributes: isEditMode ? prev.attributes : attrs,
+      regulatory: pk?.regulatory === 'cdsco' ? prev.regulatory ?? { ...DEFAULT_REG } : undefined,
+      fmcg: pk?.regulatory === 'legal-metrology' ? prev.fmcg ?? { ...DEFAULT_FMCG, isFood: typeId === 'type-fmcg-food' } : undefined,
+    }));
+    if (!isEditMode) { setAxes(axesFor(tpl.filter((a) => a.isVariant).slice(0, 3))); setVariantRows([]); }
+  };
+
+  // Variant Matrix state: up to three axes; rows are generated from them.
   const [hasVariantsToggle, setHasVariantsToggle] = useState<boolean>(false);
-  const [selectedVariants, setSelectedVariants] = useState<Record<string, boolean>>({});
+  const [axes, setAxes] = useState<{ name: string; values: string[] }[]>(DEFAULT_AXES);
+  const [axisDraft, setAxisDraft] = useState<string[]>(['', '', '']);
+  const [skuPrefix, setSkuPrefix] = useState('');
+  const [variantRows, setVariantRows] = useState<ProductVariant[]>([]);
 
   // Identifier creation input state (KEPT AS IT IS)
   const [newIdType, setNewIdType] = useState('Barcode');
@@ -89,18 +140,21 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         documents: editingProduct.documents ? [...editingProduct.documents] : []
       });
       setHasVariantsToggle(!!editingProduct.hasVariants);
-      
-      const initSelected: Record<string, boolean> = {};
-      (editingProduct.variants || []).forEach(v => {
-        initSelected[v.id || v.sku] = true;
-      });
-      setSelectedVariants(initSelected);
+      const vs = editingProduct.variants || [];
+      setVariantRows(vs);
+      const et = productTypes.find((t) => t.id === editingProduct.productTypeId);
+      const tplAxes = (et ? attributeTemplates[et.attributeTemplate] ?? [] : []).filter((a) => a.isVariant).slice(0, 3);
+      const names = editingProduct.variantAxes?.length ? editingProduct.variantAxes : tplAxes.length ? tplAxes.map((a) => a.name) : DEFAULT_AXES.map((a) => a.name);
+      const slots = [vs.map((v) => v.size), vs.map((v) => v.thickness), vs.map((v) => v.side)];
+      setAxes(names.map((n, i) => ({ name: n, values: vs.length ? uniq(slots[i]) : [] })));
+      setSkuPrefix(vs[0]?.sku.split('-').slice(0, 2).join('-') || prefixFromName(editingProduct.name));
     } else {
-      const nextCode = `8903${Math.floor(100000000 + Math.random() * 900000000)}`;
+      const taken = usedGtins(products);
+      const nextCode = nextGtin13(taken);
       const defaultPort = portfolios[0];
       const defaultCat = defaultPort?.categories[0];
       const defaultSub = defaultCat?.subCategories[0];
-      const defaultType = productTypes[0];
+      const defaultType = productTypes.find((t) => industryPacks.find((pk) => pk.id === packOf(t.id, productTypes))?.enabled) ?? productTypes[0];
 
       setFormData({
         name: '',
@@ -109,8 +163,8 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         portfolioId: defaultPort?.id || '',
         categoryId: defaultCat?.id || '',
         subCategoryId: defaultSub?.id || '',
-        principalId: 'Biorad Medisys Pvt Ltd',
-        brand: 'Genius Evocon',
+        principalId: activePrincipal.name,
+        brand: '',
         productTypeId: defaultType?.id || 'type-implant',
         baseUom: 'Each',
         trackingMode: 'Batch + Serial',
@@ -119,16 +173,9 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         sourceSystem: 'Manual Creation',
         externalRef: `MAT-SAP-${Math.floor(100000 + Math.random() * 900000)}`,
         hasVariants: false,
-        lifecycleStatus: 'Active',
-        approvalStatus: 'Approved',
-        attributes: {
-          material: 'Titanium Alloy (Ti6Al4V ELI)',
-          site: 'Knee - Tibial Tray',
-          implantSize: 'Size 3',
-          thickness: '10 mm',
-          laterality: 'Universal / Bilateral',
-          sterility: 'Sterile - Gamma Radiation'
-        },
+        lifecycleStatus: 'Draft',
+        approvalStatus: 'Draft',
+        attributes: Object.fromEntries((attributeTemplates[defaultType?.attributeTemplate ?? ''] ?? []).filter((x) => x.defaultValue).map((x) => [x.id, x.defaultValue as string])),
         trackingRules: {
           mode: 'Batch + Serial',
           mfgDateRequired: true,
@@ -150,13 +197,13 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
           isEngineConnected: true,
           engineSource: 'VinFlux Pricing Engine v3.2',
           lastSync: '2026-11-01',
-          mrp: 48500,
+          mrp: 0,
           currency: 'INR',
-          dealerTransferCap: 34000,
-          institutionalTenderCap: 29500,
+          dealerTransferCap: 0,
+          institutionalTenderCap: 0,
           govPriceCapEnforced: true,
           marginFloorPercent: 18,
-          priceListsLinked: ['Tier 1 Standard Distribution']
+          priceListsLinked: []
         },
         identifiers: [
           {
@@ -169,7 +216,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
           },
           {
             type: 'GTIN',
-            value: `0${nextCode}`,
+            value: nextCode,
             isPrimary: false,
             uom: 'Product level',
             source: 'Manufacturer',
@@ -186,7 +233,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
             isPurchase: false,
             dimensions: '25 × 15 × 10 cm',
             weight: '0.45 kg',
-            barcode: `BX-${nextCode}`
+            barcode: packGtin14(nextCode, 1)
           },
           {
             level: 'Carton',
@@ -197,41 +244,23 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
             isPurchase: true,
             dimensions: '60 × 40 × 30 cm',
             weight: '5.20 kg',
-            barcode: `CT-${nextCode}`
+            barcode: packGtin14(nextCode, 2)
           }
         ],
-        documents: [
-          {
-            name: 'Instructions For Use (IFU) - Rev D',
-            type: 'IFU / Clinical Manual',
-            version: 'v4.1',
-            effective: '2025-01-15',
-            expiry: '2028-01-15',
-            status: 'Approved',
-            size: '2.4 MB PDF'
-          },
-          {
-            name: 'CE Certificate Annex IX',
-            type: 'MDR Regulatory Clearance',
-            version: 'v2.0',
-            effective: '2024-06-10',
-            expiry: '2029-06-09',
-            status: 'Approved',
-            size: '1.8 MB PDF'
-          }
-        ]
+        documents: [],
+        regulatory: packOf(defaultType?.id, productTypes) === 'medical-devices' ? { ...DEFAULT_REG } : undefined,
+        fmcg: packOf(defaultType?.id, productTypes) === 'fmcg' ? { ...DEFAULT_FMCG, isFood: defaultType?.id === 'type-fmcg-food' } : undefined,
+        isKit: false,
+        kitComponents: []
       });
       setHasVariantsToggle(false);
-      setSelectedVariants({
-        'EVO-SZ2-10MM-L': true,
-        'EVO-SZ2-10MM-R': true,
-        'EVO-SZ3-10MM-L': true,
-        'EVO-SZ3-10MM-R': true,
-        'EVO-SZ4-15MM-L': true,
-        'EVO-SZ4-15MM-R': true
-      });
+      setVariantRows([]);
+      setAxes((() => { const tpl = (attributeTemplates[defaultType?.attributeTemplate ?? ''] ?? []).filter((x) => x.isVariant).slice(0, 3); return tpl.length ? tpl.map((x) => ({ name: x.name, values: [] as string[] })) : DEFAULT_AXES; })());
+      setSkuPrefix('');
     }
     setCurrentStep(1);
+    setSubmitErrors([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editProductId, editingProduct, isOpen, portfolios, productTypes]);
 
   if (!isOpen) return null;
@@ -283,9 +312,9 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
 
   const handleAutoGenerateCode = (checked: boolean) => {
     if (checked) {
-      const generated = `8903${Math.floor(100000000 + Math.random() * 900000000)}`;
+      const generated = nextGtin13(usedGtins(products, editProductId));
       setFormData((prev) => ({ ...prev, code: generated }));
-      showToast(`Auto-generated GTIN/Code: ${generated}`, 'info');
+      showToast(`Generated GS1 GTIN-13 ${generated} (check digit included).`, 'info');
     }
   };
 
@@ -312,6 +341,11 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
       return;
     }
 
+    if (/GTIN/i.test(newIdType)) {
+      const err = gtinError(trimmedVal);
+      if (err) { showToast(`GTIN ${trimmedVal}: ${err}`, 'danger'); return; }
+      if (usedGtins(products, editProductId).has(normalise(trimmedVal))) { showToast(`GTIN ${trimmedVal} is already used by another product.`, 'danger'); return; }
+    }
     const currentIds = formData.identifiers || [];
     const isDuplicate = currentIds.some((id) => id.value.toLowerCase() === trimmedVal.toLowerCase());
     if (isDuplicate) {
@@ -481,20 +515,23 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
       return;
     }
 
-    const finalStatus = asDraft ? 'Draft' : 'Active';
-    const finalAppr = asDraft ? 'Draft' : 'Approved';
-
-    // Assemble variants if enabled
-    const finalVariants: ProductVariant[] = hasVariantsToggle
-      ? [
-          { id: 'EVO-SZ2-10MM-L', sku: 'EVO-SZ2-10MM-L', name: `${formData.name} - Sz 2 / 10mm Left`, size: 'Size 2', thickness: '10 mm', side: 'Left', gtin: '089032090124', status: 'Active' },
-          { id: 'EVO-SZ2-10MM-R', sku: 'EVO-SZ2-10MM-R', name: `${formData.name} - Sz 2 / 10mm Right`, size: 'Size 2', thickness: '10 mm', side: 'Right', gtin: '089032090125', status: 'Active' },
-          { id: 'EVO-SZ3-10MM-L', sku: 'EVO-SZ3-10MM-L', name: `${formData.name} - Sz 3 / 10mm Left`, size: 'Size 3', thickness: '10 mm', side: 'Left', gtin: '089032090126', status: 'Active' },
-          { id: 'EVO-SZ3-10MM-R', sku: 'EVO-SZ3-10MM-R', name: `${formData.name} - Sz 3 / 10mm Right`, size: 'Size 3', thickness: '10 mm', side: 'Right', gtin: '089032090127', status: 'Active' },
-          { id: 'EVO-SZ4-15MM-L', sku: 'EVO-SZ4-15MM-L', name: `${formData.name} - Sz 4 / 15mm Left`, size: 'Size 4', thickness: '15 mm', side: 'Left', gtin: '089032090128', status: 'Active' },
-          { id: 'EVO-SZ4-15MM-R', sku: 'EVO-SZ4-15MM-R', name: `${formData.name} - Sz 4 / 15mm Right`, size: 'Size 4', thickness: '15 mm', side: 'Right', gtin: '089032090129', status: 'Active' }
-        ].filter(v => selectedVariants[v.id] !== false)
-      : [];
+    // Maker-checker: publishing = submitting for approval. An active product stays active while its change is reviewed.
+    const wasActive = editingProduct?.lifecycleStatus === 'Active';
+    const finalStatus: Product['lifecycleStatus'] = asDraft ? (wasActive ? 'Active' : 'Draft') : (wasActive ? 'Active' : 'Pending Approval');
+    const finalAppr: Product['approvalStatus'] = asDraft ? (wasActive ? 'Approved' : 'Draft') : 'Pending Approval';
+    const finalVariants: ProductVariant[] = hasVariantsToggle ? variantRows : [];
+    const variantAxes = hasVariantsToggle ? axes.filter((ax) => ax.values.length).map((ax) => ax.name) : [];
+    if (!asDraft) {
+      const candidate = { ...formData, hasVariants: hasVariantsToggle, variants: finalVariants } as Partial<Product>;
+      const { errors } = checkProduct(candidate, products, validationRules, editingProduct?.id ?? null, checkCtx);
+      if (errors.length) {
+        setSubmitErrors(errors);
+        setCurrentStep(10);
+        showToast(`${errors.length} issue(s) must be fixed before submitting for approval.`, 'danger');
+        return;
+      }
+    }
+    const trail = asDraft ? {} : { submittedBy: currentUser.name, submittedAt: todayISO(), rejectionReason: null };
 
     if (isEditMode && editingProduct) {
       updateProduct(editingProduct.id, {
@@ -502,12 +539,18 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         hasVariants: hasVariantsToggle,
         variantCount: finalVariants.length,
         variants: finalVariants,
+        variantAxes,
         lifecycleStatus: finalStatus,
         approvalStatus: finalAppr,
-        updatedAt: '2026-11-02',
-        updatedBy: 'Product Admin'
+        ...trail,
+        updatedAt: todayISO(),
+        updatedBy: currentUser.name,
+        changeHistory: [
+          { field: asDraft ? 'Draft saved' : 'Approval', prevValue: editingProduct.approvalStatus, newValue: finalAppr, changedBy: currentUser.name, changedAt: new Date().toISOString().slice(0, 16).replace('T', ' '), reason: asDraft ? 'Edited' : 'Submitted for approval' },
+          ...(editingProduct.changeHistory || [])
+        ]
       });
-      showToast(`Product "${formData.name}" updated successfully.`, 'success');
+      showToast(asDraft ? `Draft saved for "${formData.name}".` : `"${formData.name}" submitted for approval.`, 'success');
     } else {
       const newProduct: Product = {
         id: `prod-${Date.now()}`,
@@ -517,8 +560,8 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         portfolioId: formData.portfolioId || portfolios[0]?.id || '',
         categoryId: formData.categoryId || availableCategories[0]?.id || '',
         subCategoryId: formData.subCategoryId || availableSubCategories[0]?.id || '',
-        principalId: formData.principalId || 'Biorad Medisys Pvt Ltd',
-        brand: formData.brand || 'Genius Evocon',
+        principalId: formData.principalId || activePrincipal.name,
+        brand: formData.brand || '',
         productTypeId: formData.productTypeId || 'type-implant',
         baseUom: formData.baseUom || 'Each',
         lifecycleStatus: finalStatus,
@@ -530,8 +573,14 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         externalRef: formData.externalRef || '',
         hasVariants: hasVariantsToggle,
         variantCount: finalVariants.length,
-        updatedAt: '2026-11-02',
-        updatedBy: 'Product Admin',
+        updatedAt: todayISO(),
+        updatedBy: currentUser.name,
+        ...trail,
+        regulatory: formData.regulatory,
+        fmcg: formData.fmcg,
+        variantAxes,
+        isKit: !!formData.isKit,
+        kitComponents: formData.isKit ? formData.kitComponents || [] : [],
         attributes: formData.attributes || {},
         inventoryPolicy: formData.inventoryPolicy || {
           inheritDefaults: true,
@@ -580,16 +629,15 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
           {
             field: 'Lifecycle Status',
             prevValue: 'New',
-            newValue: finalStatus,
-            changedBy: 'Product Admin',
-            changedAt: '2026-11-02 11:30',
-            reason: isEditMode ? 'Updated via Product Master Side Drawer' : 'Created via Universal Wizard'
+            newValue: asDraft ? 'Draft' : 'Pending Approval',
+            changedBy: currentUser.name,
+            changedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+            reason: asDraft ? 'Created as draft' : 'Created and submitted for approval'
           }
         ]
       };
 
       addProduct(newProduct);
-      showToast(`Product "${newProduct.name}" created successfully.`, 'success');
     }
 
     onClose();
@@ -727,12 +775,17 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                     <select
                       className="vf-select"
                       value={formData.productTypeId || 'type-implant'}
-                      onChange={(e) => setFormData({ ...formData, productTypeId: e.target.value })}
+                      onChange={(e) => changeProductType(e.target.value)}
                     >
-                      {productTypes.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.code})</option>
+                      {industryPacks.filter((pk) => pk.enabled || pk.id === pack).map((pk) => (
+                        <optgroup key={pk.id} label={pk.name}>
+                          {productTypes.filter((t) => packOf(t.id, productTypes) === pk.id).map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
+                    <span style={{ fontSize: 11.5, color: 'var(--vf-slate-500)' }}>Industry pack: <strong>{industryPacks.find((x) => x.id === pack)?.name}</strong> — decides the regulatory fields and checks.</span>
                   </div>
 
                   <div className="vf-form-group">
@@ -965,221 +1018,336 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Regulatory section depends on the industry pack */}
+                {pack === 'fmcg' && (() => {
+                  const f = formData.fmcg ?? { ...DEFAULT_FMCG, isFood: formData.productTypeId === 'type-fmcg-food' };
+                  const setF = (patch: Partial<FmcgDetails>) => setFormData((prev) => ({ ...prev, fmcg: { ...(prev.fmcg ?? f), ...patch } }));
+                  return (
+                    <div style={{ marginTop: 22, borderTop: '1px solid var(--vf-slate-200)', paddingTop: 18 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px' }}>Pack declarations (Legal Metrology){f.isFood && ' & FSSAI'}</h4>
+                      <p style={{ fontSize: 12, color: 'var(--vf-slate-500)', margin: '0 0 12px' }}>Printed on every consumer pack in India. MRP is set in the Pricing step.</p>
+                      <div className="vf-grid-2col" style={{ gap: '16px' }}>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Net quantity *</label>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <input type="number" min={0} className="vf-input" value={f.netQuantity ?? ''} onChange={(e) => setF({ netQuantity: e.target.value === '' ? null : Number(e.target.value) })} />
+                            <select className="vf-select" style={{ width: 90 }} value={f.netQuantityUnit} onChange={(e) => setF({ netQuantityUnit: e.target.value as FmcgDetails['netQuantityUnit'] })}>
+                              {['g', 'kg', 'ml', 'L', 'pcs'].map((u) => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Shelf life (months){f.isFood && ' *'}</label>
+                          <input type="number" min={0} className="vf-input" value={f.shelfLifeMonths ?? ''} onChange={(e) => setF({ shelfLifeMonths: e.target.value === '' ? null : Number(e.target.value) })} />
+                        </div>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Country of origin *</label>
+                          <input className="vf-input" value={f.countryOfOrigin} onChange={(e) => setF({ countryOfOrigin: e.target.value })} />
+                        </div>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Consumer-care contact *</label>
+                          <input className="vf-input" value={f.consumerCare} placeholder="Phone / email printed on pack" onChange={(e) => setF({ consumerCare: e.target.value })} />
+                        </div>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Units per case</label>
+                          <input type="number" min={1} className="vf-input" value={f.unitsPerCase ?? ''} onChange={(e) => setF({ unitsPerCase: e.target.value === '' ? null : Number(e.target.value) })} />
+                        </div>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Food product</label>
+                          <label style={{ display: 'flex', gap: 8, fontSize: 13, alignItems: 'center' }}><input type="checkbox" checked={f.isFood} onChange={(e) => setF({ isFood: e.target.checked })} /> Food / beverage (needs FSSAI)</label>
+                        </div>
+                        {f.isFood && (
+                          <>
+                            <div className="vf-form-group">
+                              <label className="vf-label">FSSAI licence no. *</label>
+                              <input className="vf-input" value={f.fssaiLicenceNo} maxLength={14} placeholder="14 digits" onChange={(e) => setF({ fssaiLicenceNo: e.target.value.replace(/\D/g, '') })} />
+                            </div>
+                            <div className="vf-form-group">
+                              <label className="vf-label">FSSAI valid until *</label>
+                              <input type="date" className="vf-input" value={f.fssaiValidUntil} onChange={(e) => setF({ fssaiValidUntil: e.target.value })} />
+                            </div>
+                            <div className="vf-form-group">
+                              <label className="vf-label">Veg / non-veg mark *</label>
+                              <select className="vf-select" value={f.foodMark} onChange={(e) => setF({ foodMark: e.target.value as FmcgDetails['foodMark'] })}>
+                                <option value="">Choose…</option><option value="Veg">Veg (green dot)</option><option value="Non-veg">Non-veg (brown dot)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {pack === 'general' && (
+                  <div style={{ marginTop: 22, borderTop: '1px solid var(--vf-slate-200)', paddingTop: 14, fontSize: 12.5, color: 'var(--vf-slate-500)' }}>
+                    General merchandise has no industry-specific registration. Common checks (barcode, HSN, approval) still apply.
+                  </div>
+                )}
+                {pack === 'medical-devices' && (() => {
+                  const reg = formData.regulatory ?? DEFAULT_REG;
+                  const setReg = (patch: Partial<ProductRegulatory>) => setFormData((prev) => ({ ...prev, regulatory: { ...(prev.regulatory ?? DEFAULT_REG), ...patch } }));
+                  const expected = licenceFormFor(reg.riskClass);
+                  const mismatch = reg.licenceType.startsWith('Manufacturing') && reg.licenceType !== expected;
+                  return (
+                    <div style={{ marginTop: 22, borderTop: '1px solid var(--vf-slate-200)', paddingTop: 18 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px' }}>Regulatory registration (CDSCO, Medical Devices Rules 2017)</h4>
+                      <p style={{ fontSize: 12, color: 'var(--vf-slate-500)', margin: '0 0 12px' }}>Checked when the product is submitted and approved: the licence must suit the risk class and be valid.</p>
+                      <div className="vf-grid-2col" style={{ gap: '16px' }}>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Risk class *</label>
+                          <select className="vf-select" value={reg.riskClass} onChange={(e) => {
+                            const rc = e.target.value as RiskClass;
+                            setReg({ riskClass: rc, licenceType: reg.licenceType.startsWith('Manufacturing') ? licenceFormFor(rc) as LicenceType : reg.licenceType });
+                          }}>
+                            <option value="A">Class A — low risk</option>
+                            <option value="B">Class B — low-moderate risk</option>
+                            <option value="C">Class C — moderate-high risk</option>
+                            <option value="D">Class D — high risk</option>
+                          </select>
+                        </div>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Licence *</label>
+                          <select className="vf-select" value={reg.licenceType} onChange={(e) => setReg({ licenceType: e.target.value as LicenceType })}>
+                            <option value="Manufacturing (MD-5)">Manufacturing licence — Form MD-5 (Class A/B, state)</option>
+                            <option value="Manufacturing (MD-9)">Manufacturing licence — Form MD-9 (Class C/D, central)</option>
+                            <option value="Import (MD-15)">Import licence — Form MD-15</option>
+                            <option value="Not required">Not required</option>
+                          </select>
+                          {mismatch && <span style={{ fontSize: 11.5, color: '#b91c1c' }}>Class {reg.riskClass} needs {expected}.</span>}
+                        </div>
+                        {reg.licenceType !== 'Not required' && (
+                          <>
+                            <div className="vf-form-group">
+                              <label className="vf-label">Licence number *</label>
+                              <input className="vf-input" value={reg.licenceNo} placeholder="e.g. MFG/MD/2023/000412" onChange={(e) => setReg({ licenceNo: e.target.value })} />
+                            </div>
+                            <div className="vf-form-group">
+                              <label className="vf-label">Licence valid until *</label>
+                              <input type="date" className="vf-input" value={reg.licenceValidUntil} onChange={(e) => setReg({ licenceValidUntil: e.target.value })} />
+                              {reg.licenceValidUntil && reg.licenceValidUntil < todayISO() && <span style={{ fontSize: 11.5, color: '#b91c1c' }}>This licence has expired.</span>}
+                            </div>
+                          </>
+                        )}
+                        <div className="vf-form-group">
+                          <label className="vf-label">Device</label>
+                          <label style={{ display: 'flex', gap: 8, fontSize: 13, alignItems: 'center' }}><input type="checkbox" checked={reg.implantable} onChange={(e) => setReg({ implantable: e.target.checked })} /> Implantable (needs GTIN / UDI-DI)</label>
+                          <label style={{ display: 'flex', gap: 8, fontSize: 13, alignItems: 'center', marginTop: 6 }}><input type="checkbox" checked={reg.sterile} onChange={(e) => setReg({ sterile: e.target.checked, shelfLifeMonths: e.target.checked ? reg.shelfLifeMonths ?? 60 : reg.shelfLifeMonths })} /> Supplied sterile</label>
+                        </div>
+                        <div className="vf-form-group">
+                          <label className="vf-label">Shelf life (months){reg.sterile && ' *'}</label>
+                          <input type="number" min={0} className="vf-input" value={reg.shelfLifeMonths ?? ''} placeholder="Leave empty if it does not expire"
+                            onChange={(e) => setReg({ shelfLifeMonths: e.target.value === '' ? null : Number(e.target.value) })} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
             {/* ============================================================== */}
             {/* STEP 3: DYNAMIC CONFIGURABLE ATTRIBUTES */}
             {/* ============================================================== */}
-            {currentStep === 3 && (
+            {currentStep === 3 && (() => {
+              const groups = Array.from(new Set(template.map((x) => x.group)));
+              const extra = Object.keys(formData.attributes ?? {}).filter((k) => !template.some((x) => x.id === k));
+              return (
               <div className="vf-step-pane active">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--vf-slate-900)' }}>
-                    Step 3: Dynamic Configurable Attributes
-                  </h3>
-                  <button
-                    type="button"
-                    className="vf-btn-inline-manage"
-                    onClick={() => showToast('Dynamic attribute schemas configured in Configuration Studio.', 'info')}
-                  >
-                    ⚙️ Configure Attribute Sets
-                  </button>
+                <div style={{ marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--vf-slate-900)' }}>Step 3: Attributes</h3>
+                  <p style={{ fontSize: '12.5px', color: 'var(--vf-slate-500)', margin: 0 }}>
+                    Fields come from the “{currentType?.name ?? 'product type'}” template, so every industry sees only what applies. Attributes marked “variant” are filled per SKU in the next step.
+                  </p>
                 </div>
-                <p style={{ fontSize: '12.5px', color: 'var(--vf-slate-500)', marginBottom: '20px' }}>
-                  These attribute sets are dynamically loaded according to the selected Product Type and Template without requiring hardcoded schema modifications.
-                </p>
-
-                <div className="vf-grid-2col" style={{ gap: '16px' }}>
-                  <div className="vf-form-group">
-                    <label className="vf-label">Material Formulation</label>
-                    <select
-                      className="vf-select"
-                      value={formData.attributes?.material || 'Titanium Alloy (Ti6Al4V ELI)'}
-                      onChange={(e) => handleAttributeChange('material', e.target.value)}
-                    >
-                      <option value="Titanium Alloy (Ti6Al4V ELI)">Titanium Alloy (Ti6Al4V ELI)</option>
-                      <option value="Cobalt Chromium (CoCrMo)">Cobalt Chromium (CoCrMo)</option>
-                      <option value="PEEK Optima Medical Grade">PEEK Optima Medical Grade</option>
-                      <option value="Ultra-High Molecular Weight Polyethylene (UHMWPE)">Ultra-High Molecular Weight Polyethylene (UHMWPE)</option>
-                      <option value="Stainless Steel 316L VM">Stainless Steel 316L VM</option>
-                    </select>
+                {template.length === 0 && <div style={{ fontSize: 13, color: 'var(--vf-slate-500)' }}>This product type has no attribute template.</div>}
+                {groups.map((g) => (
+                  <div key={g} style={{ marginBottom: 18 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--vf-slate-500)', marginBottom: 8 }}>{g}</div>
+                    <div className="vf-grid-2col" style={{ gap: '16px' }}>
+                      {template.filter((x) => x.group === g).map((x) => {
+                        const val = formData.attributes?.[x.id] ?? '';
+                        const variantMode = x.isVariant && hasVariantsToggle;
+                        return (
+                          <div key={x.id} className="vf-form-group">
+                            <label className="vf-label">
+                              {x.name}{x.unit ? ` (${x.unit})` : ''}{x.required && !variantMode && <span style={{ color: 'var(--vf-danger)' }}> *</span>}
+                              {x.isVariant && <span className="vf-badge vf-badge-type" style={{ fontSize: '9px', padding: '1px 4px', marginLeft: '6px' }}>Variant</span>}
+                            </label>
+                            {variantMode ? <div style={{ fontSize: 12, color: 'var(--vf-slate-500)', padding: '8px 0' }}>Set per SKU in Step 4.</div>
+                              : x.type === 'select' ? (
+                                <select className="vf-select" value={val} onChange={(e) => handleAttributeChange(x.id, e.target.value)}>
+                                  <option value="">Choose…</option>
+                                  {(x.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                              ) : (
+                                <input className="vf-input" type={x.type === 'number' ? 'number' : 'text'} value={val} placeholder={x.defaultValue ?? ''} onChange={(e) => handleAttributeChange(x.id, e.target.value)} />
+                              )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-
-                  <div className="vf-form-group">
-                    <label className="vf-label">Anatomical Application Site</label>
-                    <select
-                      className="vf-select"
-                      value={formData.attributes?.site || 'Knee - Tibial Tray'}
-                      onChange={(e) => handleAttributeChange('site', e.target.value)}
-                    >
-                      <option value="Knee - Tibial Tray">Knee - Tibial Tray</option>
-                      <option value="Knee - Femoral Component">Knee - Femoral Component</option>
-                      <option value="Hip - Acetabular Cup">Hip - Acetabular Cup</option>
-                      <option value="Hip - Femoral Stem">Hip - Femoral Stem</option>
-                      <option value="Spine - Interbody Cage">Spine - Interbody Cage</option>
-                      <option value="Trauma - Distal Radius">Trauma - Distal Radius</option>
-                    </select>
-                  </div>
-
-                  <div className="vf-form-group">
-                    <label className="vf-label">
-                      Implant Size <span className="vf-badge vf-badge-type" style={{ fontSize: '9px', padding: '1px 4px', marginLeft: '4px' }}>Generates Variant</span>
-                    </label>
-                    <select
-                      className="vf-select"
-                      value={formData.attributes?.implantSize || 'Size 3'}
-                      onChange={(e) => handleAttributeChange('implantSize', e.target.value)}
-                    >
-                      <option value="Size 1">Size 1</option>
-                      <option value="Size 2">Size 2</option>
-                      <option value="Size 3">Size 3</option>
-                      <option value="Size 4">Size 4</option>
-                      <option value="Size 5">Size 5</option>
-                      <option value="Size 6">Size 6</option>
-                    </select>
-                  </div>
-
-                  <div className="vf-form-group">
-                    <label className="vf-label">
-                      Thickness / Augment Profile <span className="vf-badge vf-badge-type" style={{ fontSize: '9px', padding: '1px 4px', marginLeft: '4px' }}>Generates Variant</span>
-                    </label>
-                    <select
-                      className="vf-select"
-                      value={formData.attributes?.thickness || '10 mm'}
-                      onChange={(e) => handleAttributeChange('thickness', e.target.value)}
-                    >
-                      <option value="5 mm">5 mm</option>
-                      <option value="10 mm">10 mm</option>
-                      <option value="12 mm">12 mm</option>
-                      <option value="15 mm">15 mm</option>
-                      <option value="18 mm">18 mm</option>
-                      <option value="Wedge Profile 10°">Wedge Profile 10°</option>
-                    </select>
-                  </div>
-
-                  <div className="vf-form-group">
-                    <label className="vf-label">
-                      Laterality / Anatomical Side <span className="vf-badge vf-badge-type" style={{ fontSize: '9px', padding: '1px 4px', marginLeft: '4px' }}>Generates Variant</span>
-                    </label>
-                    <select
-                      className="vf-select"
-                      value={formData.attributes?.laterality || 'Universal / Bilateral'}
-                      onChange={(e) => handleAttributeChange('laterality', e.target.value)}
-                    >
-                      <option value="Left">Left</option>
-                      <option value="Right">Right</option>
-                      <option value="Universal / Bilateral">Universal / Bilateral</option>
-                    </select>
-                  </div>
-
-                  <div className="vf-form-group">
-                    <label className="vf-label">Sterilization Assurance Modality</label>
-                    <select
-                      className="vf-select"
-                      value={formData.attributes?.sterility || 'Sterile - Gamma Radiation'}
-                      onChange={(e) => handleAttributeChange('sterility', e.target.value)}
-                    >
-                      <option value="Sterile - Gamma Radiation">Sterile - Gamma Radiation (25 kGy)</option>
-                      <option value="Sterile - Ethylene Oxide (EtO)">Sterile - Ethylene Oxide (EtO)</option>
-                      <option value="Sterile - E-Beam">Sterile - E-Beam</option>
-                      <option value="Non-Sterile (Hospital Steam Autoclave Required)">Non-Sterile (Hospital Steam Autoclave Required)</option>
-                    </select>
-                  </div>
-                </div>
+                ))}
+                {extra.length > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--vf-slate-500)' }}>Other stored attributes: {extra.map((k) => `${k} = ${formData.attributes?.[k]}`).join(' · ')}</div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
             {/* ============================================================== */}
             {/* STEP 4: VARIANTS & OPERATIONAL SKU MANAGEMENT */}
             {/* ============================================================== */}
-            {currentStep === 4 && (
+            {currentStep === 4 && (() => {
+              const combos = (() => {
+                const used = axes.filter((ax) => ax.values.length);
+                if (!used.length) return [] as string[][];
+                return used.reduce<string[][]>((acc, ax) => acc.flatMap((c) => ax.values.map((v) => [...c, v])), [[]]);
+              })();
+              const usedAxisIdx = axes.map((ax, i) => (ax.values.length ? i : -1)).filter((i) => i >= 0);
+              const keyOf = (v: ProductVariant) => [v.size, v.thickness, v.side].join('|');
+              const generate = () => {
+                if (!combos.length) { showToast('Add at least one value to an axis first.', 'warning'); return; }
+                const prefix = (skuPrefix || prefixFromName(formData.name || 'SKU')).toUpperCase();
+                const existing = new Map(variantRows.map((v) => [keyOf(v), v]));
+                const taken = usedGtins(products, editProductId);
+                (formData.identifiers ?? []).forEach((i) => taken.add(normalise(i.value)));
+                variantRows.forEach((v) => v.gtin && taken.add(normalise(v.gtin)));
+                const rows = combos.map((c) => {
+                  const vals = ['N/A', 'N/A', 'N/A'];
+                  usedAxisIdx.forEach((ai, k) => { vals[ai] = c[k]; });
+                  const v: ProductVariant = { id: '', sku: '', name: '', size: vals[0], thickness: vals[1], side: vals[2], status: 'Active', gtin: '' };
+                  const prev = existing.get(keyOf(v));
+                  if (prev) return prev;
+                  const sku = [prefix, ...c.map(abbr)].join('-');
+                  return { ...v, id: sku, sku, name: `${formData.name || 'Product'} - ${c.join(' / ')}`, gtin: nextGtin13(taken) };
+                });
+                setVariantRows(rows);
+                setSkuPrefix(prefix);
+                showToast(`${rows.length} SKU(s) ready — new ones got unique GS1 GTINs.`, 'success');
+              };
+              const kit = formData.kitComponents ?? [];
+              const setKit = (next: KitComponent[]) => setFormData((prev) => ({ ...prev, kitComponents: next }));
+              return (
               <div className="vf-step-pane active">
                 <div style={{ marginBottom: '20px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--vf-slate-900)' }}>
-                    Step 4: Variants & Operational SKU Management
+                    Step 4: Variants, SKUs & Sets
                   </h3>
                   <p style={{ fontSize: '12.5px', color: 'var(--vf-slate-500)', margin: 0 }}>
-                    Simple products map to a single operational SKU. Variant-based products generate combinations from dimensional parameters with preview and validation.
+                    Enter the values you actually make. Every combination becomes a SKU with its own GS1 GTIN; remove the ones you don’t make.
                   </p>
                 </div>
 
                 <div style={{ backgroundColor: 'var(--vf-slate-50)', border: '1px solid var(--vf-slate-200)', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>
-                    <input
-                      type="checkbox"
-                      checked={hasVariantsToggle}
-                      onChange={(e) => {
-                        setHasVariantsToggle(e.target.checked);
-                        setFormData({ ...formData, hasVariants: e.target.checked });
-                      }}
-                    />
-                    <span>Enable Matrix Variants for this Product (Size, Thickness, Side)</span>
+                    <input type="checkbox" checked={hasVariantsToggle} onChange={(e) => { setHasVariantsToggle(e.target.checked); setFormData({ ...formData, hasVariants: e.target.checked }); }} />
+                    <span>This product comes in variants ({axes.map((a) => a.name.toLowerCase()).join(' / ')})</span>
                   </label>
                 </div>
 
                 {hasVariantsToggle ? (
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <span style={{ fontWeight: 600, fontSize: '13px' }}>Generated Combinations Preview</span>
-                      <span style={{ fontSize: '12px', color: 'var(--vf-slate-500)' }}>Uncheck any invalid or unmanufactured combinations</span>
+                    <div className="vf-grid-2col" style={{ gap: 14, marginBottom: 12 }}>
+                      {axes.map((ax, ai) => (
+                        <div key={ax.name} className="vf-form-group">
+                          <label className="vf-label">{ax.name}</label>
+                          <div className="vf-chip-input">
+                            {ax.values.map((v) => (
+                              <span key={v} className="vf-chip">{v}<button type="button" aria-label={`Remove ${v}`} onClick={() => setAxes(axes.map((x, i) => (i === ai ? { ...x, values: x.values.filter((y) => y !== v) } : x)))}>×</button></span>
+                            ))}
+                            <input value={axisDraft[ai]} placeholder="Type a value, then Enter"
+                              onChange={(e) => setAxisDraft(axisDraft.map((d, i) => (i === ai ? e.target.value : d)))}
+                              onKeyDown={(e) => {
+                                if (e.key !== 'Enter' && e.key !== ',') return;
+                                e.preventDefault();
+                                const vals = axisDraft[ai].split(',').map((x) => x.trim()).filter(Boolean);
+                                if (!vals.length) return;
+                                setAxes(axes.map((x, i) => (i === ai ? { ...x, values: uniq([...x.values, ...vals]) } : x)));
+                                setAxisDraft(axisDraft.map((d, i) => (i === ai ? '' : d)));
+                              }} />
+                          </div>
+                          {(() => {
+                            const opts = (templateAxes.find((t) => t.name === ax.name)?.options ?? []).filter((o) => !ax.values.includes(o));
+                            return opts.length ? (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                                {opts.map((o) => <button key={o} type="button" className="vf-btn vf-btn-xs vf-btn-secondary" onClick={() => setAxes(axes.map((x, i) => (i === ai ? { ...x, values: [...x.values, o] } : x)))}>+ {o}</button>)}
+                              </div>
+                            ) : null;
+                          })()}
+                        </div>
+                      ))}
+                      <div className="vf-form-group">
+                        <label className="vf-label">SKU prefix</label>
+                        <input className="vf-input" value={skuPrefix} placeholder={prefixFromName(formData.name || 'SKU')} onChange={(e) => setSkuPrefix(e.target.value.toUpperCase())} />
+                      </div>
                     </div>
-
-                    <div className="vf-table-container">
-                      <table className="vf-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '40px', textAlign: 'center' }}>Include</th>
-                            <th>Generated SKU Code</th>
-                            <th>Size</th>
-                            <th>Thickness</th>
-                            <th>Side</th>
-                            <th>Generated GTIN</th>
-                            <th>Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[
-                            { sku: 'EVO-SZ2-10MM-L', size: 'Size 2', thick: '10 mm', side: 'Left', gtin: '089032090124' },
-                            { sku: 'EVO-SZ2-10MM-R', size: 'Size 2', thick: '10 mm', side: 'Right', gtin: '089032090125' },
-                            { sku: 'EVO-SZ3-10MM-L', size: 'Size 3', thick: '10 mm', side: 'Left', gtin: '089032090126' },
-                            { sku: 'EVO-SZ3-10MM-R', size: 'Size 3', thick: '10 mm', side: 'Right', gtin: '089032090127' },
-                            { sku: 'EVO-SZ4-15MM-L', size: 'Size 4', thick: '15 mm', side: 'Left', gtin: '089032090128' },
-                            { sku: 'EVO-SZ4-15MM-R', size: 'Size 4', thick: '15 mm', side: 'Right', gtin: '089032090129' }
-                          ].map((item) => {
-                            const isInc = selectedVariants[item.sku] !== false;
-                            return (
-                              <tr key={item.sku}>
-                                <td style={{ textAlign: 'center' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isInc}
-                                    onChange={(e) => setSelectedVariants({ ...selectedVariants, [item.sku]: e.target.checked })}
-                                  />
-                                </td>
-                                <td><code>{item.sku}</code></td>
-                                <td>{item.size}</td>
-                                <td>{item.thick}</td>
-                                <td>{item.side}</td>
-                                <td><code>{item.gtin}</code></td>
-                                <td><span className="vf-badge vf-badge-draft">Ready</span></td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                      <button type="button" className="vf-btn vf-btn-primary vf-btn-sm" onClick={generate}>Generate SKUs ({combos.length})</button>
+                      <span style={{ fontSize: 12, color: 'var(--vf-slate-500)' }}>Existing SKUs keep their GTIN; only new combinations get a new one.</span>
                     </div>
+                    {variantRows.length > 0 && (
+                      <div className="vf-table-container">
+                        <table className="vf-table">
+                          <thead><tr><th>SKU</th>{axes.map((ax, i) => (axes[i].values.length || variantRows.some((v) => [v.size, v.thickness, v.side][i] !== 'N/A') ? <th key={ax.name}>{ax.name}</th> : null))}<th>GTIN (GS1)</th><th /></tr></thead>
+                          <tbody>{variantRows.map((v) => (
+                            <tr key={v.sku}>
+                              <td><code>{v.sku}</code></td>
+                              {axes.map((ax, i) => (axes[i].values.length || variantRows.some((r) => [r.size, r.thickness, r.side][i] !== 'N/A') ? <td key={ax.name}>{[v.size, v.thickness, v.side][i]}</td> : null))}
+                              <td><code>{v.gtin}</code>{gtinError(v.gtin) && <div style={{ fontSize: 11, color: '#b91c1c' }}>{gtinError(v.gtin)}</div>}</td>
+                              <td><button type="button" className="vf-btn vf-btn-xs vf-btn-secondary" onClick={() => setVariantRows(variantRows.filter((x) => x.sku !== v.sku))} title="Remove this SKU"><Trash2 size={12} /></button></td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <div style={{ textAlign: 'center', padding: '30px', background: '#f8fafc', border: '1px dashed var(--vf-slate-300)', borderRadius: '8px' }}>
-                    <Sliders size={28} className="text-slate-400" style={{ margin: '0 auto 8px auto' }} />
-                    <div style={{ fontWeight: 600, color: 'var(--vf-slate-700)', fontSize: '13px' }}>Single SKU Product Mode</div>
-                    <div style={{ fontSize: '12px', color: 'var(--vf-slate-500)', marginTop: '4px' }}>
-                      This product operates as a standalone master item without dimensional matrix permutations.
-                    </div>
+                  <div style={{ textAlign: 'center', padding: '24px', background: '#f8fafc', border: '1px dashed var(--vf-slate-300)', borderRadius: '8px' }}>
+                    <Sliders size={26} className="text-slate-400" style={{ margin: '0 auto 8px auto' }} />
+                    <div style={{ fontWeight: 600, color: 'var(--vf-slate-700)', fontSize: '13px' }}>Single SKU product</div>
+                    <div style={{ fontSize: '12px', color: 'var(--vf-slate-500)', marginTop: '4px' }}>The product code and its GTIN identify it.</div>
                   </div>
                 )}
+
+                <div style={{ marginTop: 22, borderTop: '1px solid var(--vf-slate-200)', paddingTop: 16 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}>
+                    <input type="checkbox" checked={!!formData.isKit} onChange={(e) => setFormData({ ...formData, isKit: e.target.checked, kitComponents: e.target.checked ? kit : [] })} />
+                    <span>{pack === 'medical-devices' ? 'This product is an instrument set / kit made of other products' : 'This product is a combo / bundle pack made of other products'}</span>
+                  </label>
+                  {formData.isKit && (
+                    <div style={{ marginTop: 12 }}>
+                      <table className="vf-table">
+                        <thead><tr><th>Component product</th><th>Variant</th><th style={{ width: 90 }}>Qty</th><th /></tr></thead>
+                        <tbody>{kit.map((c, i) => {
+                          const cp = products.find((x) => x.id === c.productId);
+                          const upd = (patch: Partial<KitComponent>) => setKit(kit.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                          return (
+                            <tr key={i}>
+                              <td><select className="vf-select" value={c.productId} onChange={(e) => upd({ productId: e.target.value, variantSku: null })}>
+                                {products.filter((x) => x.id !== editProductId && !x.isKit && x.lifecycleStatus !== 'Retired').map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                              </select></td>
+                              <td><select className="vf-select" value={c.variantSku ?? ''} onChange={(e) => upd({ variantSku: e.target.value || null })}>
+                                <option value="">Any variant</option>
+                                {(cp?.variants ?? []).map((v) => <option key={v.sku} value={v.sku}>{v.sku}</option>)}
+                              </select></td>
+                              <td><input type="number" min={1} className="vf-input" value={c.qty} onChange={(e) => upd({ qty: Number(e.target.value) })} /></td>
+                              <td><button type="button" className="vf-btn vf-btn-xs vf-btn-secondary" onClick={() => setKit(kit.filter((_, j) => j !== i))}><Trash2 size={12} /></button></td>
+                            </tr>
+                          );
+                        })}</tbody>
+                      </table>
+                      <button type="button" className="vf-btn vf-btn-sm vf-btn-secondary" style={{ marginTop: 8 }}
+                        onClick={() => { const first = products.find((x) => x.id !== editProductId && !x.isKit && x.lifecycleStatus !== 'Retired'); if (first) setKit([...kit, { productId: first.id, variantSku: null, qty: 1 }]); }}>
+                        <Plus size={12} /> Add component
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* ============================================================== */}
             {/* STEP 5: MULTIPLE PRODUCT IDENTIFIERS & BARCODES (KEPT AS IT IS) */}
@@ -1983,7 +2151,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                         <input
                           type="number"
                           className="vf-input"
-                          value={formData.pricingReference?.mrp || 48500}
+                          value={formData.pricingReference?.mrp ?? 0}
                           onChange={(e) => setFormData({
                             ...formData,
                             pricingReference: {
@@ -2008,7 +2176,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                         <input
                           type="number"
                           className="vf-input"
-                          value={formData.pricingReference?.dealerTransferCap || 34000}
+                          value={formData.pricingReference?.dealerTransferCap ?? 0}
                           onChange={(e) => setFormData({
                             ...formData,
                             pricingReference: {
@@ -2033,7 +2201,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                         <input
                           type="number"
                           className="vf-input"
-                          value={formData.pricingReference?.institutionalTenderCap || 29500}
+                          value={formData.pricingReference?.institutionalTenderCap ?? 0}
                           onChange={(e) => setFormData({
                             ...formData,
                             pricingReference: {
@@ -2058,7 +2226,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                         <input
                           type="number"
                           className="vf-input"
-                          value={formData.pricingReference?.marginFloorPercent || 18}
+                          value={formData.pricingReference?.marginFloorPercent ?? 0}
                           onChange={(e) => setFormData({
                             ...formData,
                             pricingReference: {
@@ -2110,6 +2278,16 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                         />
                         <span style={{ fontWeight: 600 }}>Enforce NPPA / DPCO Ceiling Price Order</span>
                       </label>
+                      {formData.pricingReference?.govPriceCapEnforced !== false && (
+                        <div className="vf-form-group">
+                          <label className="vf-label">NPPA ceiling price (₹)</label>
+                          <input type="number" min={0} className="vf-input" value={formData.pricingReference?.govNpddCeiling ?? ''} placeholder="Leave empty if no ceiling applies"
+                            onChange={(e) => setFormData((prev) => ({ ...prev, pricingReference: { ...(prev.pricingReference as NonNullable<Product['pricingReference']>), govNpddCeiling: e.target.value === '' ? undefined : Number(e.target.value) } }))} />
+                          {formData.pricingReference?.govNpddCeiling && (formData.pricingReference?.mrp ?? 0) > formData.pricingReference.govNpddCeiling && (
+                            <span style={{ fontSize: 11.5, color: '#b91c1c' }}>MRP is above the ceiling — approval will be blocked.</span>
+                          )}
+                        </div>
+                      )}
                       <div style={{ fontSize: '12px', color: 'var(--vf-slate-500)', lineHeight: '1.5' }}>
                         When activated, transactions through partner portals will validate orders against national government price ceilings to prevent non-compliant invoicing.
                       </div>
@@ -2126,13 +2304,23 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
               <div className="vf-step-pane active">
                 <div style={{ marginBottom: '20px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--vf-slate-900)' }}>
-                    Step 10: Architectural Verification & Publication
+                    Step 10: Review & Submit for Approval
                   </h3>
                   <p style={{ fontSize: '12.5px', color: 'var(--vf-slate-500)', margin: 0 }}>
                     Verify compliance with VinFlux Universal Master governance before submitting for regulatory sign-off.
                   </p>
                 </div>
 
+                {(() => {
+                  const live = checkProduct({ ...formData, hasVariants: hasVariantsToggle, variants: hasVariantsToggle ? variantRows : [] }, products, validationRules, editProductId, checkCtx);
+                  const errs = live.errors;
+                  return (
+                    <div className={errs.length ? 'vf-lc-errors' : ''} style={errs.length ? { marginBottom: 16 } : { marginBottom: 16, background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+                      {errs.length ? <><strong>{submitErrors.length ? 'Submit blocked — ' : ''}{errs.length} issue(s) to fix before approval</strong><ul>{errs.map((e) => <li key={e}>{e}</li>)}</ul></> : <strong>✓ All approval checks pass. Submitting sends it to an approver (maker-checker).</strong>}
+                      {live.warnings.length > 0 && <ul style={{ color: '#b45309' }}>{live.warnings.map((w) => <li key={w}>{w}</li>)}</ul>}
+                    </div>
+                  );
+                })()}
                 <div className="vf-card" style={{ marginBottom: '16px', borderLeft: '4px solid var(--vf-accent)', padding: '16px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0' }}>{formData.name || 'Untitled Product'}</h3>
                   <div style={{ fontSize: '12.5px', color: 'var(--vf-slate-500)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -2234,7 +2422,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                 type="button"
                 className="vf-btn vf-btn-secondary"
                 onClick={(e) => handleSubmit(e, true)}
-                title="Save product state as Draft without publishing"
+                title="Save without sending for approval"
               >
                 Save as Draft
               </button>
@@ -2252,6 +2440,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
 
               {currentStep < 10 ? (
                 <button
+                  key="next"
                   type="button"
                   className="vf-btn vf-btn-primary"
                   onClick={handleNextStep}
@@ -2260,12 +2449,13 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                 </button>
               ) : (
                 <button
+                  key="submit"
                   type="submit"
                   className="vf-btn vf-btn-success"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
                 >
                   <Check size={14} />
-                  <span>Submit & Publish</span>
+                  <span>Submit for approval</span>
                 </button>
               )}
             </div>

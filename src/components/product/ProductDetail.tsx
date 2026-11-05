@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext.tsx';
 import type { Product } from '../../types/product.ts';
+import { LifecycleDialog, availableActions } from './LifecycleDialog.tsx';
+import type { LifecycleAction } from './LifecycleDialog.tsx';
+import { expiryLabel, packOf } from '../../utils/productLifecycle.ts';
+import { isValidGtin } from '../../utils/gs1.ts';
 import { 
   ArrowLeft, 
   Edit3, 
@@ -24,7 +28,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   onEdit,
   onPrintLabel
 }) => {
-  const { products, portfolios, productTypes, duplicateProduct, updateProduct, showToast } = useApp();
+  const { products, portfolios, productTypes, duplicateProduct, showToast, currentUser, attributeTemplates, industryPacks } = useApp();
+  const [lifecycle, setLifecycle] = useState<LifecycleAction | null>(null);
 
   const [activeTab, setActiveTab] = useState<string>('overview');
 
@@ -34,38 +39,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   const subCategory = category?.subCategories.find((s) => s.id === product.subCategoryId);
   const pType = productTypes.find((t) => t.id === product.productTypeId);
 
-  const [statusModalOpen, setStatusModalOpen] = useState(false);
-  const [selectedNewStatus, setSelectedNewStatus] = useState<Product['lifecycleStatus']>(product.lifecycleStatus);
-  const [statusReason, setStatusReason] = useState('');
-
   const handleDuplicate = () => {
     const cloned = duplicateProduct(product.id);
     showToast(`Product duplicated as "${cloned.name}".`, 'success');
-  };
-
-  const handleSaveStatusChange = () => {
-    if (!statusReason.trim()) {
-      showToast('Please provide a reason for the status change.', 'warning');
-      return;
-    }
-    updateProduct(product.id, {
-      lifecycleStatus: selectedNewStatus,
-      approvalStatus: selectedNewStatus === 'Active' ? 'Approved' : selectedNewStatus === 'Draft' ? 'Draft' : 'Pending Approval',
-      changeHistory: [
-        {
-          field: 'Lifecycle Status',
-          prevValue: product.lifecycleStatus,
-          newValue: selectedNewStatus,
-          changedBy: 'Product Admin',
-          changedAt: '2026-10-31',
-          reason: statusReason.trim()
-        },
-        ...(product.changeHistory || [])
-      ]
-    });
-    showToast(`Status updated to "${selectedNewStatus}".`, 'success');
-    setStatusModalOpen(false);
-    setStatusReason('');
   };
 
   const isImplant = product.productTypeId === 'type-implant' || product.trackingMode.includes('Batch');
@@ -176,16 +152,12 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             <span>Clone</span>
           </button>
 
-          <button
-            type="button"
-            className="vf-btn vf-btn-secondary"
-            onClick={() => {
-              setSelectedNewStatus(product.lifecycleStatus);
-              setStatusModalOpen(true);
-            }}
-          >
-            <span>Status ▾</span>
-          </button>
+          {availableActions(product, currentUser.permissions).filter((a) => a !== 'reject').map((a) => (
+            <button key={a} type="button" className={`vf-btn ${a === 'retire' ? 'vf-btn-secondary' : 'vf-btn-secondary'}`} onClick={() => setLifecycle(a)}
+              style={a === 'retire' ? { color: '#dc2626', borderColor: '#fecaca' } : { color: '#4338ca', borderColor: '#c7d2fe' }}>
+              {a === 'submit' ? 'Submit for approval' : a === 'approve' ? 'Review & approve' : 'Retire'}
+            </button>
+          ))}
 
           <button
             type="button"
@@ -198,6 +170,19 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
           </button>
         </div>
       </div>
+
+      {product.approvalStatus === 'Pending Approval' && (
+        <div className="vf-lc-banner pending">
+          <span>⏳ <strong>Waiting for approval</strong>{product.submittedBy ? ` — submitted by ${product.submittedBy}${product.submittedAt ? ` on ${product.submittedAt}` : ''}` : ''}.{product.lifecycleStatus === 'Active' ? ' The current approved version stays sellable meanwhile.' : ''}</span>
+          {currentUser.permissions.canApproveProducts && <button type="button" className="vf-btn vf-btn-sm vf-btn-primary" onClick={() => setLifecycle('approve')}>Review</button>}
+        </div>
+      )}
+      {product.approvalStatus === 'Rejected' && (
+        <div className="vf-lc-banner rejected"><span>↩ <strong>Sent back:</strong> {product.rejectionReason || 'No reason given'}</span></div>
+      )}
+      {product.lifecycleStatus === 'Retired' && (
+        <div className="vf-lc-banner retired"><span><strong>Retired</strong>{product.retireReason ? `: ${product.retireReason}` : ''}. It can’t be ordered; history is kept.</span></div>
+      )}
 
       {/* Tabs Bar */}
       <div className="vf-detail-tabs" role="tablist" style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--vf-slate-200)', background: '#ffffff', padding: '0 12px', borderRadius: '6px 6px 0 0', overflowX: 'auto' }}>
@@ -591,65 +576,32 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         {/* ========================================================= */}
         {/* TAB 3: ATTRIBUTES */}
         {/* ========================================================= */}
-        {activeTab === 'attributes' && (
-          <div className="vf-card" style={{ padding: '24px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '14px' }}>Technical & Clinical Attributes</h3>
-            <div className="note" style={{ marginBottom: '14px' }}>
-              Attributes derived from the “{pType?.name || 'Implant'}” attribute template. Variant attributes define matrix SKU permutations.
+        {activeTab === 'attributes' && (() => {
+          const tpl = pType ? attributeTemplates[pType.attributeTemplate] ?? [] : [];
+          const extra = Object.entries(product.attributes ?? {}).filter(([k]) => !tpl.some((x) => x.id === k));
+          return (
+            <div className="vf-card" style={{ padding: '24px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>Attributes</h3>
+              <div style={{ fontSize: 12.5, color: 'var(--vf-slate-500)', marginBottom: 14 }}>From the “{pType?.name ?? 'product type'}” template · industry pack: {industryPacks.find((x) => x.id === packOf(product.productTypeId, productTypes))?.name}</div>
+              <table className="vf-table" style={{ width: '100%' }}>
+                <thead><tr><th>Attribute</th><th>Group</th><th>Role</th><th>Value</th><th>Required</th></tr></thead>
+                <tbody>
+                  {tpl.map((x) => (
+                    <tr key={x.id}>
+                      <td><strong>{x.name}</strong></td>
+                      <td>{x.group}</td>
+                      <td>{x.isVariant ? <span className="vf-badge vf-badge-type">Variant</span> : <span className="vf-badge" style={{ background: '#f1f5f9' }}>Descriptive</span>}</td>
+                      <td>{x.isVariant && product.hasVariants ? <span style={{ color: 'var(--vf-slate-500)' }}>Per SKU ({product.variants.length})</span> : (product.attributes?.[x.id] || <span style={{ color: 'var(--vf-slate-400)' }}>—</span>)}{x.unit && product.attributes?.[x.id] ? ` ${x.unit}` : ''}</td>
+                      <td>{x.required ? 'Yes' : 'No'}</td>
+                    </tr>
+                  ))}
+                  {extra.map(([k, v]) => <tr key={k}><td><strong>{k}</strong></td><td>Other</td><td /><td>{v}</td><td>No</td></tr>)}
+                </tbody>
+              </table>
             </div>
-            <table className="vf-table" style={{ width: '100%' }}>
-              <thead>
-                <tr>
-                  <th>Attribute Name</th>
-                  <th>Data Type</th>
-                  <th>Role</th>
-                  <th>Configured Value / Allowed Options</th>
-                  <th>Mandatory</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><strong>Material Composition</strong></td>
-                  <td>Single Select</td>
-                  <td><span className="vf-badge" style={{ background: '#f1f5f9' }}>Descriptive</span></td>
-                  <td>Titanium Alloy Ti6Al4V ELI (ASTM F136)</td>
-                  <td>Yes</td>
-                </tr>
-                <tr>
-                  <td><strong>Implant Size</strong></td>
-                  <td>Measurement</td>
-                  <td><span className="vf-badge vf-badge-type">Variant-Defining</span></td>
-                  <td>Sizes: 1, 2, 3, 4, 5, 6</td>
-                  <td>Yes</td>
-                </tr>
-                <tr>
-                  <td><strong>Thickness</strong></td>
-                  <td>Measurement</td>
-                  <td><span className="vf-badge vf-badge-type">Variant-Defining</span></td>
-                  <td>8 mm, 10 mm, 12 mm, 14 mm</td>
-                  <td>Yes</td>
-                </tr>
-                <tr>
-                  <td><strong>Laterality (Side)</strong></td>
-                  <td>Single Select</td>
-                  <td><span className="vf-badge vf-badge-type">Variant-Defining</span></td>
-                  <td>Left, Right, Symmetrical</td>
-                  <td>Yes</td>
-                </tr>
-                <tr>
-                  <td><strong>Sterility Status</strong></td>
-                  <td>Single Select</td>
-                  <td><span className="vf-badge" style={{ background: '#f1f5f9' }}>Descriptive</span></td>
-                  <td>Gamma Irradiation (25 kGy) · Sterile Single-Use</td>
-                  <td>Yes</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
+          );
+        })()}
 
-        {/* ========================================================= */}
-        {/* TAB 4: VARIANTS & SKUS */}
         {/* ========================================================= */}
         {activeTab === 'variants' && (
           <div className="vf-card" style={{ padding: '24px' }}>
@@ -657,7 +609,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Dimensional SKUs & Product Variants</h3>
                 <div style={{ fontSize: '12.5px', color: 'var(--vf-slate-500)', marginTop: '2px' }}>
-                  {product.variants?.length || 1} generated variant combinations for this product master.
+                  {product.variants?.length ? `${product.variants.length} variant(s)` : 'Single SKU product (no variants)'}
                 </div>
               </div>
             </div>
@@ -666,7 +618,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               <thead>
                 <tr>
                   <th>Variant SKU</th>
-                  <th>Dimensions & Spec</th>
+                  <th>{(product.variantAxes?.length ? product.variantAxes : ['Size', 'Thickness', 'Side']).join(' · ')}</th>
                   <th>Status</th>
                   <th>GTIN Barcode</th>
                   <th>UOM</th>
@@ -676,20 +628,20 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               <tbody>
                 {(!product.variants || product.variants.length === 0) ? (
                   <tr>
-                    <td><code>{product.code}-V1</code></td>
-                    <td>Size 3 · Thickness 10 mm · Left</td>
-                    <td><span className="vf-badge vf-badge-approved">Active</span></td>
-                    <td><code>0{product.code}</code></td>
+                    <td><code>{product.code}</code></td>
+                    <td>Single SKU</td>
+                    <td><span className="vf-badge vf-badge-approved">{product.lifecycleStatus}</span></td>
+                    <td><code>{product.identifiers?.find((i) => /GTIN/i.test(i.type))?.value ?? '—'}</code></td>
                     <td>{product.baseUom || 'Each'}</td>
-                    <td><span className="vf-badge vf-badge-approved">In Stock</span></td>
+                    <td><span className="vf-badge vf-badge-approved">Managed</span></td>
                   </tr>
                 ) : (
                   product.variants.map((v, i) => (
                     <tr key={i}>
                       <td><code>{v.sku}</code></td>
-                      <td>{v.name || `Size ${v.size} · ${v.thickness}`}</td>
+                      <td>{[v.size, v.thickness, v.side].filter((x) => x && x !== 'N/A').join(' · ')}</td>
                       <td><span className="vf-badge vf-badge-approved">{v.status || 'Active'}</span></td>
-                      <td><code>{v.gtin || product.code}</code></td>
+                      <td><code>{v.gtin || '—'}</code>{v.gtin && !isValidGtin(v.gtin) && <div className="vf-exp-bad" style={{ fontSize: 11 }}>Invalid check digit</div>}</td>
                       <td>{product.baseUom || 'Each'}</td>
                       <td><span className="vf-badge vf-badge-approved">Managed</span></td>
                     </tr>
@@ -697,6 +649,18 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 )}
               </tbody>
             </table>
+            {product.isKit && (
+              <div style={{ marginTop: 22 }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 10px' }}>Set / Kit Contents</h3>
+                <table className="vf-table" style={{ width: '100%' }}>
+                  <thead><tr><th>Component</th><th>Variant</th><th style={{ textAlign: 'right' }}>Qty per set</th></tr></thead>
+                  <tbody>{(product.kitComponents ?? []).map((c, i) => {
+                    const cp = products.find((x) => x.id === c.productId);
+                    return <tr key={i}><td><strong>{cp?.name ?? c.productId}</strong><div style={{ fontSize: 11.5, color: 'var(--vf-slate-500)' }}>{cp?.code}</div></td><td>{c.variantSku ? <code>{c.variantSku}</code> : 'Any'}</td><td style={{ textAlign: 'right' }}>{c.qty}</td></tr>;
+                  })}</tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -856,21 +820,61 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         {/* ========================================================= */}
         {/* TAB 7: TRACKING & COMPLIANCE */}
         {/* ========================================================= */}
-        {activeTab === 'tracking' && (
-          <div className="vf-card" style={{ padding: '24px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Quality Control & Traceability Rules</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', fontSize: '13px' }}>
-              <div className="vf-breakdown-row"><span>Tracking Mode</span><strong>{product.trackingMode}</strong></div>
-              <div className="vf-breakdown-row"><span>Manufacturing Date Requirement</span><strong>Mandatory at Inwarding</strong></div>
-              <div className="vf-breakdown-row"><span>Expiry Date Enforcement</span><strong>Mandatory (Real-time FEFO)</strong></div>
-              <div className="vf-breakdown-row"><span>Unique Serial Tracking</span><strong>{product.trackingMode.includes('Serial') ? 'Required' : 'Not required'}</strong></div>
-              <div className="vf-breakdown-row"><span>QC Inspection Mandate</span><strong>Required prior to clinical release</strong></div>
-              <div className="vf-breakdown-row"><span>Distributor Minimum Shelf Life</span><strong>180 Days</strong></div>
-              <div className="vf-breakdown-row"><span>Institutional Minimum Shelf Life</span><strong>240 Days</strong></div>
-              <div className="vf-breakdown-row"><span>UDI Regulatory Device Identifier</span><strong>Yes (Compliant with MDR 2017/745)</strong></div>
+        {activeTab === 'tracking' && (() => {
+          const pk = packOf(product.productTypeId, productTypes);
+          const f = product.fmcg;
+          const fs = expiryLabel(f?.fssaiValidUntil, 90);
+          const r = product.regulatory;
+          const t = product.trackingRules;
+          const lic = expiryLabel(r?.licenceValidUntil, 90);
+          return (
+            <div className="vf-card" style={{ padding: '24px' }}>
+              {pk === 'fmcg' && (
+                <>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Pack Declarations (Legal Metrology){f?.isFood && ' & FSSAI'}</h3>
+                  {f ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', fontSize: '13px', marginBottom: '24px' }}>
+                      <div className="vf-breakdown-row"><span>Net quantity</span><strong>{f.netQuantity ?? '—'} {f.netQuantityUnit}</strong></div>
+                      <div className="vf-breakdown-row"><span>MRP (incl. taxes)</span><strong>₹{product.pricingReference?.mrp?.toLocaleString('en-IN') ?? '—'}</strong></div>
+                      <div className="vf-breakdown-row"><span>Shelf life</span><strong>{f.shelfLifeMonths ? `${f.shelfLifeMonths} months` : '—'}</strong></div>
+                      <div className="vf-breakdown-row"><span>Country of origin</span><strong>{f.countryOfOrigin || '—'}</strong></div>
+                      <div className="vf-breakdown-row"><span>Consumer care</span><strong>{f.consumerCare || '—'}</strong></div>
+                      <div className="vf-breakdown-row"><span>Units per case</span><strong>{f.unitsPerCase ?? '—'}</strong></div>
+                      {f.isFood && <>
+                        <div className="vf-breakdown-row"><span>FSSAI licence</span><strong>{f.fssaiLicenceNo || '—'}</strong></div>
+                        <div className="vf-breakdown-row"><span>FSSAI valid until</span><strong>{f.fssaiValidUntil || '—'} {fs && <span className={`vf-exp-${fs.tone}`}>· {fs.text}</span>}</strong></div>
+                        <div className="vf-breakdown-row"><span>Food mark</span><strong>{f.foodMark || '—'}</strong></div>
+                      </>}
+                    </div>
+                  ) : <div className="vf-lc-errors" style={{ marginBottom: 20 }}>Pack declarations are missing — edit the product to add them.</div>}
+                </>
+              )}
+              {pk === 'medical-devices' && <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Regulatory Registration (CDSCO, MDR 2017)</h3>}
+              {pk !== 'medical-devices' ? null : r ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', fontSize: '13px', marginBottom: '24px' }}>
+                  <div className="vf-breakdown-row"><span>Risk class</span><strong>Class {r.riskClass}</strong></div>
+                  <div className="vf-breakdown-row"><span>Licence</span><strong>{r.licenceType}</strong></div>
+                  <div className="vf-breakdown-row"><span>Licence number</span><strong>{r.licenceNo || '—'}</strong></div>
+                  <div className="vf-breakdown-row"><span>Valid until</span><strong>{r.licenceValidUntil || '—'} {lic && <span className={`vf-exp-${lic.tone}`}>· {lic.text}</span>}</strong></div>
+                  <div className="vf-breakdown-row"><span>Implantable</span><strong>{r.implantable ? 'Yes' : 'No'}</strong></div>
+                  <div className="vf-breakdown-row"><span>Sterile</span><strong>{r.sterile ? 'Yes' : 'No'}</strong></div>
+                  <div className="vf-breakdown-row"><span>Shelf life</span><strong>{r.shelfLifeMonths ? `${r.shelfLifeMonths} months` : 'No expiry'}</strong></div>
+                </div>
+              ) : <div className="vf-lc-errors" style={{ marginBottom: 20 }}>Regulatory details are missing — edit the product to add the CDSCO risk class and licence.</div>}
+              <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Traceability Rules</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', fontSize: '13px' }}>
+                <div className="vf-breakdown-row"><span>Tracking mode</span><strong>{product.trackingMode}</strong></div>
+                <div className="vf-breakdown-row"><span>Manufacturing date</span><strong>{t?.mfgDateRequired ? 'Required at goods receipt' : 'Not required'}</strong></div>
+                <div className="vf-breakdown-row"><span>Expiry date</span><strong>{t?.expiryDateRequired ? 'Required (first-expiry-first-out)' : 'Not required'}</strong></div>
+                <div className="vf-breakdown-row"><span>Serial numbers</span><strong>{product.trackingMode.includes('Serial') ? 'Required' : 'Not required'}</strong></div>
+                <div className="vf-breakdown-row"><span>QC inspection</span><strong>{t?.qcInspectionRequired ? 'Required before release' : 'Not required'}</strong></div>
+                <div className="vf-breakdown-row"><span>Min. shelf life to distributors</span><strong>{t?.minShelfLifeDistributorDays ?? '—'} days</strong></div>
+                <div className="vf-breakdown-row"><span>Min. shelf life to hospitals</span><strong>{t?.minShelfLifeInstitutionDays ?? '—'} days</strong></div>
+                <div className="vf-breakdown-row"><span>UDI-DI</span><strong>{t?.udiDiRequired ? 'Required' : 'Not required'}</strong></div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ========================================================= */}
         {/* TAB 8: INVENTORY POLICY */}
@@ -898,41 +902,25 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         {/* ========================================================= */}
         {activeTab === 'documents' && (
           <div className="vf-card" style={{ padding: '24px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Attached Technical & Regulatory Dossier</h3>
-            <table className="vf-table" style={{ width: '100%' }}>
-              <thead>
-                <tr>
-                  <th>Document Title</th>
-                  <th>Version</th>
-                  <th>Effective Date</th>
-                  <th>Status</th>
-                  <th>Uploaded By</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><strong>Technical Data Sheet — Evocon Revision TKR.pdf</strong></td>
-                  <td>v2.1</td>
-                  <td>2026-03-01</td>
-                  <td><span className="vf-badge vf-badge-approved">Active</span></td>
-                  <td>Clinical Regulatory Lead</td>
-                </tr>
-                <tr>
-                  <td><strong>CE Conformity Certificate (MDR 2017/745).pdf</strong></td>
-                  <td>v1.0</td>
-                  <td>2026-01-10</td>
-                  <td><span className="vf-badge vf-badge-approved">Active</span></td>
-                  <td>Regulatory Affairs</td>
-                </tr>
-                <tr>
-                  <td><strong>Instructions For Use (IFU-REV-ORTHO).pdf</strong></td>
-                  <td>v3.0</td>
-                  <td>2026-02-15</td>
-                  <td><span className="vf-badge vf-badge-approved">Active</span></td>
-                  <td>Product Manager</td>
-                </tr>
-              </tbody>
-            </table>
+            <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Technical & Regulatory Documents</h3>
+            {(product.documents ?? []).length === 0 ? <div style={{ color: 'var(--vf-slate-500)', fontSize: 13 }}>No documents attached.</div> : (
+              <table className="vf-table" style={{ width: '100%' }}>
+                <thead><tr><th>Document</th><th>Type</th><th>Version</th><th>Effective</th><th>Expiry</th><th>Status</th></tr></thead>
+                <tbody>
+                  {product.documents.map((d) => {
+                    const e = expiryLabel(d.expiry, 90);
+                    return (
+                      <tr key={d.name + d.version}>
+                        <td><strong>{d.name}</strong><div style={{ fontSize: 11.5, color: 'var(--vf-slate-500)' }}>{d.size}</div></td>
+                        <td>{d.type}</td><td>{d.version}</td><td>{d.effective}</td>
+                        <td>{d.expiry || '—'}{e && <div className={`vf-exp-${e.tone}`} style={{ fontSize: 11.5 }}>{e.text}</div>}</td>
+                        <td><span className={`vf-badge ${d.status === 'Approved' ? 'vf-badge-approved' : 'vf-badge-pending'}`}>{d.status}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
 
@@ -1038,80 +1026,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
       </div>
 
-      {/* Change Status Modal */}
-      {statusModalOpen && (
-        <div
-          className="vf-drawer-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setStatusModalOpen(false);
-          }}
-        >
-          <div className="vf-drawer vf-drawer-sm" style={{ width: '480px' }}>
-            <div className="vf-drawer-header">
-              <div className="vf-drawer-title-wrap">
-                <h3 className="vf-drawer-title">Change Lifecycle Status</h3>
-                <p className="vf-drawer-subtitle">Product: {product.name}</p>
-              </div>
-              <button
-                type="button"
-                className="vf-drawer-close"
-                onClick={() => setStatusModalOpen(false)}
-              >
-                &times;
-              </button>
-            </div>
-
-            <div className="vf-drawer-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label className="vf-form-label">New Status</label>
-                <select
-                  className="vf-form-control"
-                  value={selectedNewStatus}
-                  onChange={(e) => setSelectedNewStatus(e.target.value as any)}
-                >
-                  <option value="Active">Active (Eligible for commercial sale and price lists)</option>
-                  <option value="Draft">Draft (Pre-release staging)</option>
-                  <option value="Pending Approval">Pending Approval (Under review)</option>
-                  <option value="Retired">Retired (Preserve history; block new orders)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="vf-form-label">Audit Reason *</label>
-                <textarea
-                  rows={3}
-                  className="vf-form-control"
-                  placeholder="Explain why this status is being changed..."
-                  value={statusReason}
-                  onChange={(e) => setStatusReason(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="note w">
-                Status changes are recorded in the permanent audit trail. Retiring a product prevents it from being ordered while preserving all historical transaction links.
-              </div>
-            </div>
-
-            <div className="vf-drawer-footer">
-              <button
-                type="button"
-                className="vf-btn vf-btn-secondary"
-                onClick={() => setStatusModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="vf-btn vf-btn-primary"
-                onClick={handleSaveStatusChange}
-              >
-                ✓ Confirm Status Change
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {lifecycle && <LifecycleDialog product={product} action={lifecycle} onClose={() => setLifecycle(null)} />}
 
     </div>
   );
