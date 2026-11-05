@@ -4,6 +4,10 @@ import type { Product } from '../../types/product.ts';
 import { LifecycleDialog, availableActions } from './LifecycleDialog.tsx';
 import type { LifecycleAction } from './LifecycleDialog.tsx';
 import { expiryLabel, packOf } from '../../utils/productLifecycle.ts';
+import { ComplianceView } from './ComplianceFields.tsx';
+import { initialPrincipals } from '../../data/productMasterData.ts';
+
+const principalName = (id?: string) => initialPrincipals.find((x) => x.id === id)?.name ?? id ?? '—';
 import { isValidGtin } from '../../utils/gs1.ts';
 import { 
   ArrowLeft, 
@@ -104,7 +108,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               {pType?.name || 'Implant'}
             </span>
             <span className="vf-badge vf-badge-principal">
-              {product.principalId || 'Biorad Medisys'}
+              {principalName(product.principalId)}
             </span>
             <span className="vf-badge vf-badge-portfolio">
               {portfolio?.name || 'Arthroplasty'}
@@ -231,7 +235,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               </div>
               <div>
                 <span>Principal</span>
-                <b>{product.principalId || 'Biorad Medisys'}</b>
+                <b>{principalName(product.principalId)}</b>
               </div>
               <div>
                 <span>Primary GTIN</span>
@@ -296,7 +300,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                   <span style={{ fontSize: '11px', opacity: 0.8 }}>Commercial Entity</span>
                 </h3>
                 <dl>
-                  <div><dt>Principal / Manufacturer</dt><dd>{product.principalId || 'Biorad Medisys Pvt Ltd'}</dd></div>
+                  <div><dt>Principal / Manufacturer</dt><dd>{principalName(product.principalId)}</dd></div>
                   <div><dt>Brand</dt><dd>{product.brand || 'GENIUS EVOCON'}</dd></div>
                   <div><dt>Manufacturer Part No.</dt><dd><code>MPN-{product.code.slice(-6)}</code></dd></div>
                   <div><dt>Supplier / Vendor</dt><dd>Biorad Global Logistics</dd></div>
@@ -555,7 +559,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                   <p style={{ fontSize: '12.5px', color: '#64748b', margin: '0 0 8px', lineHeight: 1.5 }}>
                     In VinFlux, the <strong style={{ color: '#0f172a' }}>Principal</strong> is a commercial business partner entity (Manufacturer, IP Owner, or Master Supplier), separated from the taxonomy category.
                   </p>
-                  <div style={rowStyle}><span style={keyStyle}>Principal Organization</span><span style={valStyle}>{product.principalId || 'Biorad Medisys Private Limited'}</span></div>
+                  <div style={rowStyle}><span style={keyStyle}>Principal Organization</span><span style={valStyle}>{principalName(product.principalId)}</span></div>
                   <div style={rowStyle}><span style={keyStyle}>Principal Code</span><code>BIORAD-MED</code></div>
                   <div style={rowStyle}><span style={keyStyle}>Country of Origin / HQ</span><span style={valStyle}>India</span></div>
                   <div style={{ ...rowStyle, borderBottom: 'none' }}><span style={keyStyle}>Business Entity Role</span><span style={valStyle}>Manufacturer & Principal</span></div>
@@ -822,33 +826,12 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         {/* ========================================================= */}
         {activeTab === 'tracking' && (() => {
           const pk = packOf(product.productTypeId, productTypes);
-          const f = product.fmcg;
-          const fs = expiryLabel(f?.fssaiValidUntil, 90);
           const r = product.regulatory;
           const t = product.trackingRules;
           const lic = expiryLabel(r?.licenceValidUntil, 90);
           return (
             <div className="vf-card" style={{ padding: '24px' }}>
-              {pk === 'fmcg' && (
-                <>
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Pack Declarations (Legal Metrology){f?.isFood && ' & FSSAI'}</h3>
-                  {f ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', fontSize: '13px', marginBottom: '24px' }}>
-                      <div className="vf-breakdown-row"><span>Net quantity</span><strong>{f.netQuantity ?? '—'} {f.netQuantityUnit}</strong></div>
-                      <div className="vf-breakdown-row"><span>MRP (incl. taxes)</span><strong>₹{product.pricingReference?.mrp?.toLocaleString('en-IN') ?? '—'}</strong></div>
-                      <div className="vf-breakdown-row"><span>Shelf life</span><strong>{f.shelfLifeMonths ? `${f.shelfLifeMonths} months` : '—'}</strong></div>
-                      <div className="vf-breakdown-row"><span>Country of origin</span><strong>{f.countryOfOrigin || '—'}</strong></div>
-                      <div className="vf-breakdown-row"><span>Consumer care</span><strong>{f.consumerCare || '—'}</strong></div>
-                      <div className="vf-breakdown-row"><span>Units per case</span><strong>{f.unitsPerCase ?? '—'}</strong></div>
-                      {f.isFood && <>
-                        <div className="vf-breakdown-row"><span>FSSAI licence</span><strong>{f.fssaiLicenceNo || '—'}</strong></div>
-                        <div className="vf-breakdown-row"><span>FSSAI valid until</span><strong>{f.fssaiValidUntil || '—'} {fs && <span className={`vf-exp-${fs.tone}`}>· {fs.text}</span>}</strong></div>
-                        <div className="vf-breakdown-row"><span>Food mark</span><strong>{f.foodMark || '—'}</strong></div>
-                      </>}
-                    </div>
-                  ) : <div className="vf-lc-errors" style={{ marginBottom: 20 }}>Pack declarations are missing — edit the product to add them.</div>}
-                </>
-              )}
+              {pk !== 'medical-devices' && pk !== 'general' && <div style={{ marginBottom: 24 }}><ComplianceView pack={pk} typeId={product.productTypeId} values={product.compliance} /></div>}
               {pk === 'medical-devices' && <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px' }}>Regulatory Registration (CDSCO, MDR 2017)</h3>}
               {pk !== 'medical-devices' ? null : r ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', fontSize: '13px', marginBottom: '24px' }}>

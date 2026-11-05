@@ -11,6 +11,7 @@ import {
   TYPE_LABEL, approveList, checkList, deleteDraft, getList, gstOf, headerErrors, rejectList, reviseList, saveDraft, submitList,
 } from './pricingStore';
 import type { PriceLine, PriceList } from './pricingStore';
+import { channelPrice, ladderFor, settings, today } from './pricingStore';
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 export const STATUS_TONE: Record<PriceList['status'], 'slate' | 'amber' | 'green' | 'red' | 'blue'> = { Draft: 'slate', Pending: 'amber', Active: 'green', Superseded: 'slate', Rejected: 'red' };
@@ -30,7 +31,23 @@ export const PriceListDrawer: React.FC<{ list: PriceList; onClose: () => void; o
   const perms = currentUser.permissions;
   const editable = ['Draft', 'Rejected'].includes(l.status) && !!perms.canEditPricing;
   const canApprove = l.status === 'Pending' && !!perms.canApprovePricing;
-  const issues = useMemo(() => checkList(l, products), [l, products]);
+  /** Price checks + (for national channel lists) the ladder against the other channels' current prices. */
+  const issues = useMemo(() => {
+    const base = checkList(l, products);
+    if (l.type !== 'CHANNEL' || l.territoryIds.length || !l.channelId) return base;
+    const st = settings();
+    const tiers = channels.filter((c) => c.status === 'Active' && c.tradeModel !== 'AGENT' && c.id !== 'chn-direct')
+      .map((c) => ({ channelId: c.id, name: st.tierNames[c.id] || c.name, rank: c.tierRank, resell: !(c.canBeEndpoint && c.tierRank >= 9) }));
+    const on = l.validFrom > today() ? l.validFrom : today();
+    l.lines.forEach((ln) => {
+      const p = products.find((x) => x.id === ln.productId);
+      if (!p || !(ln.price > 0)) return;
+      const prices = Object.fromEntries(tiers.map((t) => [t.channelId, t.channelId === l.channelId ? ln.price : channelPrice(l.principalId, t.channelId, p.id, on).current?.price ?? null]));
+      ladderFor(p, tiers, prices).flatMap((c) => c.issues.filter((i) => /ladder|keeps/.test(i)))
+        .forEach((text) => base.push({ lineId: ln.id, productId: ln.productId, level: 'warning', text }));
+    });
+    return base;
+  }, [l, products, channels]);
   const set = <K extends keyof PriceList>(k: K, v: PriceList[K]) => setL((x) => ({ ...x, [k]: v }));
   const setLine = (id: string, patch: Partial<PriceLine>) => set('lines', l.lines.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const { portfolios } = useApp();
@@ -85,7 +102,7 @@ export const PriceListDrawer: React.FC<{ list: PriceList; onClose: () => void; o
         {errors.length > 0 && <ErrorList errors={errors} title="Can’t continue" />}
         {l.status === 'Rejected' && l.rejectionReason && <Alert tone="error">Rejected: {l.rejectionReason}</Alert>}
         {l.status === 'Pending' && <Alert tone="warn">Submitted by <strong>{l.submittedBy}</strong> on {l.submittedAt}. {canApprove ? (l.submittedBy === currentUser.name ? 'You submitted it, so another approver must approve.' : 'Check the prices below, then approve or reject.') : 'Waiting for a pricing approver.'}</Alert>}
-        {l.status === 'Pending' && warnCount > 0 && <Alert tone="warn">{warnCount} line(s) are below the floor price — approving accepts the lower margin.</Alert>}
+        {l.status === 'Pending' && warnCount > 0 && <Alert tone="warn">{warnCount} warning(s) on the lines below (floor price, margins or price ladder) — approving accepts them.</Alert>}
 
         <FormSection title="Applies to">
           <FormGrid cols={3}>

@@ -7,13 +7,13 @@ import type {
   ProductVariant, 
   ProductDocument,
   ProductRegulatory,
-  FmcgDetails,
   IndustryPackId,
   RiskClass,
   LicenceType,
   KitComponent
 } from '../../types/product.ts';
 import { gtinError, nextGtin13, normalise, packGtin14, usedGtins } from '../../utils/gs1.ts';
+import { ComplianceForm } from './ComplianceFields.tsx';
 import { checkProduct, licenceFormFor, packOf, todayISO } from '../../utils/productLifecycle.ts';
 import { 
   Package, 
@@ -34,7 +34,6 @@ const DEFAULT_AXES = [
   { name: 'Thickness / Length', values: [] as string[] },
   { name: 'Side', values: [] as string[] },
 ];
-const DEFAULT_FMCG: FmcgDetails = { netQuantity: null, netQuantityUnit: 'ml', shelfLifeMonths: 24, countryOfOrigin: 'India', consumerCare: '', unitsPerCase: null, isFood: false, fssaiLicenceNo: '', fssaiValidUntil: '', foodMark: '' };
 const DEFAULT_REG: ProductRegulatory = { riskClass: 'C', licenceType: 'Manufacturing (MD-9)', licenceNo: '', licenceValidUntil: '', implantable: true, sterile: true, shelfLifeMonths: 60 };
 const uniq = (xs: string[]) => Array.from(new Set(xs.filter((x) => x && x !== 'N/A')));
 const prefixFromName = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase()).join('-') || 'SKU';
@@ -110,7 +109,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
       taxRate: isEditMode ? prev.taxRate : pk?.defaultTax ?? prev.taxRate,
       attributes: isEditMode ? prev.attributes : attrs,
       regulatory: pk?.regulatory === 'cdsco' ? prev.regulatory ?? { ...DEFAULT_REG } : undefined,
-      fmcg: pk?.regulatory === 'legal-metrology' ? prev.fmcg ?? { ...DEFAULT_FMCG, isFood: typeId === 'type-fmcg-food' } : undefined,
+      compliance: pk?.regulatory === 'schema' ? prev.compliance ?? {} : undefined,
     }));
     if (!isEditMode) { setAxes(axesFor(tpl.filter((a) => a.isVariant).slice(0, 3))); setVariantRows([]); }
   };
@@ -249,7 +248,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         ],
         documents: [],
         regulatory: packOf(defaultType?.id, productTypes) === 'medical-devices' ? { ...DEFAULT_REG } : undefined,
-        fmcg: packOf(defaultType?.id, productTypes) === 'fmcg' ? { ...DEFAULT_FMCG, isFood: defaultType?.id === 'type-fmcg-food' } : undefined,
+        compliance: industryPacks.find((x) => x.id === packOf(defaultType?.id, productTypes))?.regulatory === 'schema' ? {} : undefined,
         isKit: false,
         kitComponents: []
       });
@@ -577,7 +576,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         updatedBy: currentUser.name,
         ...trail,
         regulatory: formData.regulatory,
-        fmcg: formData.fmcg,
+        compliance: formData.compliance,
         variantAxes,
         isKit: !!formData.isKit,
         kitComponents: formData.isKit ? formData.kitComponents || [] : [],
@@ -1020,65 +1019,9 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                 </div>
 
                 {/* Regulatory section depends on the industry pack */}
-                {pack === 'fmcg' && (() => {
-                  const f = formData.fmcg ?? { ...DEFAULT_FMCG, isFood: formData.productTypeId === 'type-fmcg-food' };
-                  const setF = (patch: Partial<FmcgDetails>) => setFormData((prev) => ({ ...prev, fmcg: { ...(prev.fmcg ?? f), ...patch } }));
-                  return (
-                    <div style={{ marginTop: 22, borderTop: '1px solid var(--vf-slate-200)', paddingTop: 18 }}>
-                      <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px' }}>Pack declarations (Legal Metrology){f.isFood && ' & FSSAI'}</h4>
-                      <p style={{ fontSize: 12, color: 'var(--vf-slate-500)', margin: '0 0 12px' }}>Printed on every consumer pack in India. MRP is set in the Pricing step.</p>
-                      <div className="vf-grid-2col" style={{ gap: '16px' }}>
-                        <div className="vf-form-group">
-                          <label className="vf-label">Net quantity *</label>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <input type="number" min={0} className="vf-input" value={f.netQuantity ?? ''} onChange={(e) => setF({ netQuantity: e.target.value === '' ? null : Number(e.target.value) })} />
-                            <select className="vf-select" style={{ width: 90 }} value={f.netQuantityUnit} onChange={(e) => setF({ netQuantityUnit: e.target.value as FmcgDetails['netQuantityUnit'] })}>
-                              {['g', 'kg', 'ml', 'L', 'pcs'].map((u) => <option key={u} value={u}>{u}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                        <div className="vf-form-group">
-                          <label className="vf-label">Shelf life (months){f.isFood && ' *'}</label>
-                          <input type="number" min={0} className="vf-input" value={f.shelfLifeMonths ?? ''} onChange={(e) => setF({ shelfLifeMonths: e.target.value === '' ? null : Number(e.target.value) })} />
-                        </div>
-                        <div className="vf-form-group">
-                          <label className="vf-label">Country of origin *</label>
-                          <input className="vf-input" value={f.countryOfOrigin} onChange={(e) => setF({ countryOfOrigin: e.target.value })} />
-                        </div>
-                        <div className="vf-form-group">
-                          <label className="vf-label">Consumer-care contact *</label>
-                          <input className="vf-input" value={f.consumerCare} placeholder="Phone / email printed on pack" onChange={(e) => setF({ consumerCare: e.target.value })} />
-                        </div>
-                        <div className="vf-form-group">
-                          <label className="vf-label">Units per case</label>
-                          <input type="number" min={1} className="vf-input" value={f.unitsPerCase ?? ''} onChange={(e) => setF({ unitsPerCase: e.target.value === '' ? null : Number(e.target.value) })} />
-                        </div>
-                        <div className="vf-form-group">
-                          <label className="vf-label">Food product</label>
-                          <label style={{ display: 'flex', gap: 8, fontSize: 13, alignItems: 'center' }}><input type="checkbox" checked={f.isFood} onChange={(e) => setF({ isFood: e.target.checked })} /> Food / beverage (needs FSSAI)</label>
-                        </div>
-                        {f.isFood && (
-                          <>
-                            <div className="vf-form-group">
-                              <label className="vf-label">FSSAI licence no. *</label>
-                              <input className="vf-input" value={f.fssaiLicenceNo} maxLength={14} placeholder="14 digits" onChange={(e) => setF({ fssaiLicenceNo: e.target.value.replace(/\D/g, '') })} />
-                            </div>
-                            <div className="vf-form-group">
-                              <label className="vf-label">FSSAI valid until *</label>
-                              <input type="date" className="vf-input" value={f.fssaiValidUntil} onChange={(e) => setF({ fssaiValidUntil: e.target.value })} />
-                            </div>
-                            <div className="vf-form-group">
-                              <label className="vf-label">Veg / non-veg mark *</label>
-                              <select className="vf-select" value={f.foodMark} onChange={(e) => setF({ foodMark: e.target.value as FmcgDetails['foodMark'] })}>
-                                <option value="">Choose…</option><option value="Veg">Veg (green dot)</option><option value="Non-veg">Non-veg (brown dot)</option>
-                              </select>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
+                {pack !== 'medical-devices' && pack !== 'general' && (
+                  <ComplianceForm pack={pack} typeId={formData.productTypeId} values={formData.compliance ?? {}} onChange={(v) => setFormData((prev) => ({ ...prev, compliance: v }))} />
+                )}
                 {pack === 'general' && (
                   <div style={{ marginTop: 22, borderTop: '1px solid var(--vf-slate-200)', paddingTop: 14, fontSize: 12.5, color: 'var(--vf-slate-500)' }}>
                     General merchandise has no industry-specific registration. Common checks (barcode, HSN, approval) still apply.
@@ -2245,6 +2188,19 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                             }
                           })}
                         />
+                      </div>
+                      <div className="vf-form-group">
+                        <label className="vf-label">Standard Cost (₹ per unit)</label>
+                        <input
+                          type="number"
+                          className="vf-input"
+                          value={formData.pricingReference?.standardCost ?? 0}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            pricingReference: { ...(formData.pricingReference as NonNullable<typeof formData.pricingReference>), standardCost: Number(e.target.value) || 0 }
+                          })}
+                        />
+                        <span style={{ fontSize: 11, color: 'var(--vf-slate-500)' }}>Landed / manufacturing cost — used by the margin engine. Visible to pricing users only.</span>
                       </div>
                     </div>
                   </div>

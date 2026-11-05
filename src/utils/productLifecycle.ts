@@ -4,6 +4,7 @@
  */
 import type { AttributeDefinition, IndustryPackId, Product, ProductType, ValidationRule } from '../types/product.ts';
 import { gtinError, normalise, usedGtins } from './gs1.ts';
+import { checkCompliance } from '../data/compliance.ts';
 
 export const todayISO = () => new Date().toISOString().slice(0, 10);
 const isDate = (s?: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -64,24 +65,10 @@ export const checkProduct = (p: Partial<Product>, all: Product[], rules: Validat
   const implant = pack === 'medical-devices' && (reg?.implantable || p.productTypeId === 'type-implant');
   if (on(rules, 'val-udi') && implant && !(p.identifiers ?? []).some((i) => /GTIN|UDI/i.test(i.type))) errors.push('Implantable devices need a GTIN / UDI-DI identifier.');
 
-  if (pack === 'fmcg') {
-    const f = p.fmcg;
-    if (on(rules, 'val-legal-metrology')) {
-      if (!f) errors.push('FMCG declarations (net quantity, origin, consumer care) are required.');
-      else {
-        if (!(f.netQuantity && f.netQuantity > 0)) errors.push('Net quantity is required (Legal Metrology).');
-        if (!f.countryOfOrigin.trim()) errors.push('Country of origin is required (Legal Metrology).');
-        if (!f.consumerCare.trim()) errors.push('Consumer-care contact is required (Legal Metrology).');
-      }
-      if (!(p.pricingReference?.mrp && p.pricingReference.mrp > 0)) errors.push('MRP is required for packaged goods (Legal Metrology).');
-    }
-    if (f?.isFood && on(rules, 'val-fssai')) {
-      if (!/^\d{14}$/.test(f.fssaiLicenceNo)) errors.push('FSSAI licence number must be 14 digits.');
-      if (!f.fssaiValidUntil) errors.push('FSSAI licence validity date is required.');
-      else if (f.fssaiValidUntil < todayISO()) errors.push(`FSSAI licence expired on ${f.fssaiValidUntil}.`);
-      if (!f.foodMark) errors.push('Choose the veg / non-veg mark.');
-      if (!f.shelfLifeMonths) errors.push('Food products need a shelf life.');
-    }
+  if (pack !== 'medical-devices' && pack !== 'general' && on(rules, 'val-pack-compliance')) {
+    const r = checkCompliance(pack, p.productTypeId, p.compliance ?? {}, todayISO());
+    errors.push(...r.errors);
+    warnings.push(...r.warnings);
   }
 
   if (pack === 'medical-devices' && (!digital || reg)) {

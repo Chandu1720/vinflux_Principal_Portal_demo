@@ -30,7 +30,7 @@ const sampleTable = (e: ImportEntity, ctx: ReturnType<typeof useImportContext>):
       ['MAT-SAP-994820', 'Tibial tray augment Sz3', '37200', '5', '36800', '', ''],
       ['8906001248095', 'Hemostatic gauze 10x10', '3050', '50', '2950', '100', '2900'],
       ['8903209045587', 'Femoral stem extension', '25000', '', '', '', ''],
-      ['8901234500019', 'CareNest hand wash 200 ml', '80', '', '', '', ''],
+      ['8903209041121', 'Revision instrument set', '548000', '', '', '', ''],
       ['MAT-UNKNOWN-9', 'Old discontinued item', '1200', '', '', '', ''],
     ];
   }
@@ -38,7 +38,7 @@ const sampleTable = (e: ImportEntity, ctx: ReturnType<typeof useImportContext>):
   return [
     ['Item Code', 'Item Name', 'Item Group', 'Division', 'Brand', 'HSN', 'GST', 'UOM', 'MRP', 'EAN', 'SAP Code'],
     ['TIB-INS-PE-03', 'Tibial Insert Polyethylene Size 3', 'Implantable Medical Device', 'Arthroplasty — Joint Replacement', 'Genius', '90213100', '5', 'Each', '24500', '', 'MAT-SAP-100231'],
-    ['CN-HW-ALOE-500', 'CareNest Hand Wash Aloe 500 ml', 'Personal & Home Care', 'Consumer Products (FMCG)', 'CareNest', '34013019', '18', 'Each', '149', '', 'MAT-SAP-100232'],
+    ['VBP-HY-3302', 'Velocity Ceramic Rear Brake Pad Set — Creta', 'Automotive Spare Part', 'Automotive Aftermarket', 'Velocity', '87083000', '18', 'Set', '1650', '', 'MAT-SAP-100232'],
     ['SCR-CORT-35-20', 'Cortical Screw 3.5 x 20 mm', 'Implantable Medical Device', 'Trauma & Extremities', 'Genius', '90211000', '5', 'Each', '1850', '8901234999990', 'MAT-SAP-100233'],
     [existing?.code ?? 'X', existing?.name ?? 'X', '', '', '', '', '', '', String((existing?.pricingReference?.mrp ?? 1000) + 500), '', ''],
     ['DRP-SURG-01', 'Surgical Drape Large', 'Disposable Drape', 'Hospital Consumables & Bio-Materials', 'Biorad', '6307', '12', 'Each', '420', '', ''],

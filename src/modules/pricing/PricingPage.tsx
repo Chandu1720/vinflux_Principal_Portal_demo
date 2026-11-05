@@ -1,27 +1,28 @@
 import React, { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BadgeIndianRupee, CalendarClock, ClipboardCheck, FileSignature, Plus, Tag } from 'lucide-react';
+import { Layers, BadgeIndianRupee, CalendarClock, ClipboardCheck, FileSignature, Plus, Tag } from 'lucide-react';
 import { Alert, Badge, Button, Card, KpiCard, PageHeader, SearchInput, Select, Tabs } from '../../platform/ui';
 import { useSubscribe } from '../../platform/useStore';
 import { useApp } from '../../context/AppContext.tsx';
 import { useChannels, usePartners, useTerritories } from '../gtm-v2/hooks/useGtmData';
-import { TYPE_LABEL, blankList, effectiveOn, priceLists, subscribePricing, today } from './pricingStore';
+import { TYPE_LABEL, approveBatch, blankList, effectiveOn, priceLists, subscribePricing, tierName, today } from './pricingStore';
 import type { ListType, PriceList } from './pricingStore';
 import { PriceListDrawer, STATUS_TONE } from './PriceListDrawer';
 import { PriceCheckTab } from './PriceCheckTab';
 import { SchemesTab } from './SchemesTab';
+import { PriceMatrixTab } from './PriceMatrixTab';
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const daysTo = (iso: string) => Math.round((Date.parse(iso) - Date.parse(today())) / 86400000);
 
 const PricingPage: React.FC = () => {
   useSubscribe(subscribePricing);
-  const { activePrincipal, currentUser } = useApp();
+  const { activePrincipal, currentUser, products, showToast } = useApp();
   const channels = useChannels().data ?? [];
   const partners = usePartners().data ?? [];
   const territories = useTerritories().data ?? [];
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'lists';
+  const tab = params.get('tab') ?? 'matrix';
   const setTab = (t: string) => { params.set('tab', t); setParams(params, { replace: true }); };
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
@@ -30,10 +31,12 @@ const PricingPage: React.FC = () => {
   const on = today();
   const pending = all.filter((l) => l.status === 'Pending');
   const contracts = all.filter((l) => l.type === 'CONTRACT');
+  const batches = Array.from(new Set(pending.filter((l) => l.batchId).map((l) => l.batchId!)))
+    .map((id) => ({ id, lists: pending.filter((l) => l.batchId === id) })).filter((b) => b.lists.length > 1);
   const expiring = contracts.filter((l) => l.status === 'Active' && l.validTo && daysTo(l.validTo) <= 90 && daysTo(l.validTo) >= 0);
   const pName = (id: string) => partners.find((p) => p.id === id)?.name ?? id;
   const appliesTo = (l: PriceList) => l.type === 'CHANNEL'
-    ? `${channels.find((c) => c.id === l.channelId)?.name ?? '—'}${l.territoryIds.length ? ` · ${l.territoryIds.map((t) => territories.find((x) => x.id === t)?.name ?? t).join(', ')}` : ' · everywhere'}`
+    ? `${channels.find((c) => c.id === l.channelId)?.name ?? '—'}${tierName(l.channelId) ? ` (${tierName(l.channelId)})` : ''}${l.territoryIds.length ? ` · ${l.territoryIds.map((t) => territories.find((x) => x.id === t)?.name ?? t).join(', ')}` : ' · everywhere'}`
     : l.partnerIds.map(pName).join(', ');
   const listState = (l: PriceList) => {
     if (l.status !== 'Active') return { label: l.status === 'Pending' ? 'Pending approval' : l.status, tone: STATUS_TONE[l.status] };
@@ -90,6 +93,7 @@ const PricingPage: React.FC = () => {
       <Card flush>
         <div className="g2-filterbar">
           <Tabs active={tab} onChange={setTab} tabs={[
+            { id: 'matrix', label: 'Price matrix & margins', icon: <Layers size={14} /> },
             { id: 'lists', label: 'Price lists', count: all.filter((l) => l.type !== 'CONTRACT').length },
             { id: 'contracts', label: 'Rate contracts', count: contracts.length },
             { id: 'approvals', label: 'Approvals', count: pending.length || undefined },
@@ -102,7 +106,15 @@ const PricingPage: React.FC = () => {
             <Select value={status} placeholder="All statuses" options={['Draft', 'Pending', 'Active', 'Superseded', 'Rejected'].map((s) => ({ value: s, label: s }))} onChange={setStatus} />
           </>}
         </div>
+        {tab === 'approvals' && batches.map((b) => (
+          <div key={b.id} className="g2-alert g2-alert-info" style={{ margin: '12px 16px 0', alignItems: 'center' }}>
+            <Layers size={15} />
+            <div style={{ flex: 1 }}><strong>Revision across {b.lists.length} channels</strong> by {b.lists[0].submittedBy} — {b.lists.map((l) => tierName(l.channelId, l.name)).join(', ')} · from {b.lists[0].validFrom}{b.lists[0].history.slice(-1)[0]?.note ? ` · “${b.lists[0].history.slice(-1)[0].note}”` : ''}{b.lists[0].submittedBy === currentUser.name ? ' · another approver must approve' : ''}</div>
+            {currentUser.permissions.canApprovePricing && b.lists[0].submittedBy !== currentUser.name && <Button size="sm" variant="primary" onClick={() => { const r = approveBatch(b.id, currentUser.name, products); showToast(r.ok ? r.message : `${r.message} ${(r.errors ?? []).join(' ')}`, r.ok ? 'success' : 'warning'); }}>Approve all {b.lists.length}</Button>}
+          </div>
+        ))}
         {['lists', 'contracts', 'approvals'].includes(tab) && table}
+        {tab === 'matrix' && <PriceMatrixTab />}
         {tab === 'check' && <PriceCheckTab />}
         {tab === 'schemes' && <SchemesTab />}
       </Card>

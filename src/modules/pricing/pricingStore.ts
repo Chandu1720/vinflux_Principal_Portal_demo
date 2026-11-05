@@ -37,6 +37,8 @@ export interface PriceList {
   status: ListStatus;
   lines: PriceLine[];
   contractRef?: string;
+  /** Lists created together by a multi-channel revision share a batch and are approved together. */
+  batchId?: string | null;
   committedValue?: number | null;
   notes: string;
   createdBy: string;
@@ -82,13 +84,28 @@ const base = (x: Partial<PriceList> & Pick<PriceList, 'id' | 'code' | 'name' | '
 });
 const SEED_LISTS: PriceList[] = [
   base({ id: 'pl-dist', code: 'PL-DIST-26', name: 'Distributor price list FY26-27', type: 'CHANNEL', channelId: 'chn-dist',
-    lines: [L('PRD-EVOCON-001', 33500, [{ minQty: 10, price: 32800 }]), L('PRD-CSM-003', 2750, [{ minQty: 50, price: 2650 }]), L('PRD-EVOCON-005', 540000), L('PRD-EVOCON-006', 21000), L('PRD-FMCG-007', 80, [{ minQty: 240, price: 79 }])] }),
+    lines: [L('PRD-EVOCON-001', 33500, [{ minQty: 10, price: 32800 }]), L('PRD-CSM-003', 2750, [{ minQty: 50, price: 2650 }]), L('PRD-EVOCON-005', 515000), L('PRD-EVOCON-006', 21000)] }),
   base({ id: 'pl-dealer', code: 'PL-DLR-26', name: 'Dealer price list FY26-27', type: 'CHANNEL', channelId: 'chn-dealer',
-    lines: [L('PRD-EVOCON-001', 36000), L('PRD-CSM-003', 2950), L('PRD-EVOCON-006', 23000), L('PRD-FMCG-007', 82)] }),
+    lines: [L('PRD-EVOCON-001', 37500), L('PRD-CSM-003', 3080), L('PRD-EVOCON-006', 23500)] }),
   base({ id: 'pl-hosp', code: 'PL-HOSP-26', name: 'Hospital direct price list FY26-27', type: 'CHANNEL', channelId: 'chn-hosp',
     lines: [L('PRD-EVOCON-001', 41000), L('PRD-CSM-003', 3400), L('PRD-EVOCON-005', 575000), L('PRD-EVOCON-006', 26000)] }),
   base({ id: 'pl-ss', code: 'PL-SS-26', name: 'Super Stockist price list FY26-27', type: 'CHANNEL', channelId: 'chn-ss',
-    lines: [L('PRD-EVOCON-001', 32400), L('PRD-CSM-003', 2620), L('PRD-FMCG-007', 78.5)] }),
+    lines: [L('PRD-EVOCON-001', 31800), L('PRD-CSM-003', 2620)] }),
+  // Agri: distributor → retailer (agri input dealer) → farmer at MRP
+  base({ id: 'pl-har-dist', principalId: 'princ-haritha', code: 'HAR-PTD-26', name: 'Haritha distributor price list 2026-27', type: 'CHANNEL', channelId: 'chn-dist',
+    lines: [L('PRD-AGR-101', 270, [{ minQty: 100, price: 265 }]), L('PRD-AGR-102', 2420), L('PRD-AGR-103', 188)] }),
+  base({ id: 'pl-har-rtl', principalId: 'princ-haritha', code: 'HAR-PTR-26', name: 'Haritha retailer price list 2026-27', type: 'CHANNEL', channelId: 'chn-retail',
+    lines: [L('PRD-AGR-101', 302), L('PRD-AGR-102', 2700), L('PRD-AGR-103', 210)] }),
+  // Automotive: distributor → workshop / retailer dealer
+  base({ id: 'pl-vel-dist', principalId: 'princ-velocity', code: 'VEL-PTD-26', name: 'Velocity distributor price list 2026-27', type: 'CHANNEL', channelId: 'chn-dist',
+    lines: [L('PRD-AUT-201', 1180, [{ minQty: 50, price: 1150 }]), L('PRD-AUT-202', 3550)] }),
+  base({ id: 'pl-vel-dlr', principalId: 'princ-velocity', code: 'VEL-DLR-26', name: 'Velocity dealer price list 2026-27', type: 'CHANNEL', channelId: 'chn-dealer',
+    lines: [L('PRD-AUT-201', 1330), L('PRD-AUT-202', 3950)] }),
+  // Electronics: distributor → dealer
+  base({ id: 'pl-vol-dist', principalId: 'princ-voltix', code: 'VOL-PTD-26', name: 'Voltix distributor price list 2026-27', type: 'CHANNEL', channelId: 'chn-dist',
+    lines: [L('PRD-ELE-301', 1560, [{ minQty: 100, price: 1520 }])] }),
+  base({ id: 'pl-vol-dlr', principalId: 'princ-voltix', code: 'VOL-DLR-26', name: 'Voltix dealer price list 2026-27', type: 'CHANNEL', channelId: 'chn-dealer',
+    lines: [L('PRD-ELE-301', 1750)] }),
   base({ id: 'pl-krishna', code: 'PL-P-KRISHNA', name: 'Krishna Medi — special prices', type: 'PARTNER', channelId: 'chn-dist', partnerIds: ['ptr-dist-vja'], validFrom: '2026-06-01',
     notes: 'Volume commitment for Vijayawada & Guntur hospitals.', lines: [L('PRD-EVOCON-001', 33000), L('PRD-CSM-003', 2700)] }),
   base({ id: 'rc-yashoda', code: 'RC-YASHODA-26', name: 'Yashoda Hospitals rate contract 2026-27', type: 'CONTRACT', channelId: 'chn-hosp', partnerIds: ['ptr-hosp-hyd', 'ptr-hosp-sec'],
@@ -97,15 +114,17 @@ const SEED_LISTS: PriceList[] = [
   base({ id: 'pl-dist-v2', familyId: 'pl-dist', version: 2, code: 'PL-DIST-26', name: 'Distributor price list FY26-27', type: 'CHANNEL', channelId: 'chn-dist', validFrom: '2026-12-01',
     status: 'Pending', approvedBy: null, approvedAt: null, createdAt: '2026-11-02', submittedAt: '2026-11-03', notes: 'Price revision: steel & titanium cost increase.',
     history: [{ at: '2026-11-02T10:00:00Z', by: 'Priya Menon', action: 'Revised from v1' }, { at: '2026-11-03T10:00:00Z', by: 'Priya Menon', action: 'Submitted', note: 'Tray +3%, gauze down to clear stock' }],
-    lines: [L('PRD-EVOCON-001', 34500, [{ minQty: 10, price: 33800 }]), L('PRD-CSM-003', 2550, [{ minQty: 50, price: 2500 }]), L('PRD-EVOCON-005', 552000), L('PRD-EVOCON-006', 21600), L('PRD-FMCG-007', 81, [{ minQty: 240, price: 79.5 }])] }),
+    lines: [L('PRD-EVOCON-001', 34500, [{ minQty: 10, price: 33800 }]), L('PRD-CSM-003', 2550, [{ minQty: 50, price: 2500 }]), L('PRD-EVOCON-005', 525000), L('PRD-EVOCON-006', 21600)] }),
 ];
 const SEED_SCHEMES: Scheme[] = [
   { id: 'sch-gauze', name: 'Gauze 10 + 1 free', kind: 'FREE_QTY', principalId: 'princ-biorad', channelIds: ['chn-dist', 'chn-dealer'], productIds: ['PRD-CSM-003'], buyQty: 10, freeQty: 1, discountPct: 0, validFrom: '2026-10-01', validTo: '2026-12-31', status: 'Active' },
-  { id: 'sch-handwash', name: 'Hand wash festive 2% extra', kind: 'EXTRA_DISCOUNT', principalId: 'princ-biorad', channelIds: ['chn-dist', 'chn-ss'], productIds: ['PRD-FMCG-007'], buyQty: 0, freeQty: 0, discountPct: 2, validFrom: '2026-10-15', validTo: '2026-11-30', status: 'Active' },
+  { id: 'sch-kharif', name: 'Rabi booster: 20 + 2 free', kind: 'FREE_QTY', principalId: 'princ-haritha', channelIds: ['chn-dist', 'chn-retail'], productIds: ['PRD-AGR-101'], buyQty: 20, freeQty: 2, discountPct: 0, validFrom: '2026-10-15', validTo: '2027-01-31', status: 'Active' },
+  { id: 'sch-battery', name: 'Battery dealer 2% festive', kind: 'EXTRA_DISCOUNT', principalId: 'princ-velocity', channelIds: ['chn-dealer'], productIds: ['PRD-AUT-202'], buyQty: 0, freeQty: 0, discountPct: 2, validFrom: '2026-10-15', validTo: '2026-11-30', status: 'Active' },
 ];
 
-const KEY = 'vinflux.pricing.v2';
-interface Db { lists: PriceList[]; schemes: Scheme[] }
+const KEY = 'vinflux.pricing.v4';
+export interface PricingSettings { tierNames: Record<string, string>; companyFloorPct: number; channelFloors: Record<string, number> }
+interface Db { lists: PriceList[]; schemes: Scheme[]; settings?: Partial<PricingSettings> }
 let cache: Db | null = null;
 const listeners = new Set<() => void>();
 const db = (): Db => (cache ??= loadJson<Db>(KEY, { lists: SEED_LISTS, schemes: SEED_SCHEMES }));
@@ -140,6 +159,9 @@ export const checkList = (list: PriceList, products: Product[]): LineIssue[] => 
     if (ref?.govPriceCapEnforced && ref.govNpddCeiling && max * (1 + gst / 100) > ref.govNpddCeiling) add('error', `Above the government (NPPA) ceiling of ₹${ref.govNpddCeiling.toLocaleString('en-IN')} incl. GST.`);
     const floor = list.type === 'CONTRACT' ? ref?.institutionalTenderCap : ref?.dealerTransferCap;
     if (floor && min < floor) add('warning', `Below the ${list.type === 'CONTRACT' ? 'tender' : 'trade'} floor price ₹${floor.toLocaleString('en-IN')} — the approver must accept the lower margin.`);
+    const cost = ref?.standardCost ?? 0;
+    const cFloor = settings().companyFloorPct;
+    if (cost > 0 && min > 0 && ((min - cost) / min) * 100 < cFloor) add('warning', `Company margin ${(((min - cost) / min) * 100).toFixed(1)}% is below the ${cFloor}% floor (cost ₹${cost.toLocaleString('en-IN')}).`);
     const slabs = [...ln.slabs].sort((a, b) => a.minQty - b.minQty);
     slabs.forEach((s, i) => {
       if (!(s.minQty > 1)) add('error', 'Slab quantity must be more than 1.');
@@ -330,4 +352,132 @@ export const quote = (q: QuoteInput, products: Product[]): Quote => {
 export const setLines = (id: string, lines: PriceLine[], by: string, note: string) => {
   const l = getList(id);
   if (l) put(touch({ ...l, lines }, by, note));
+};
+
+
+/* ----------------------- Settings: tier names & margin floor ----------------------- */
+
+/** Indian trade names for channel prices (editable). */
+export const DEFAULT_TIER_NAMES: Record<string, string> = {
+  'chn-cnf': 'C&F', 'chn-ss': 'PTS', 'chn-dist': 'PTD', 'chn-dealer': 'PT-Dealer', 'chn-retail': 'PTR', 'chn-hosp': 'Institution', 'chn-direct': 'Direct',
+};
+/** Minimum margin each reseller tier should keep (%). */
+export const DEFAULT_CHANNEL_FLOORS: Record<string, number> = { 'chn-ss': 4, 'chn-dist': 10, 'chn-dealer': 8, 'chn-retail': 15 };
+export const settings = (): PricingSettings => ({
+  tierNames: { ...DEFAULT_TIER_NAMES, ...(db().settings?.tierNames ?? {}) },
+  companyFloorPct: db().settings?.companyFloorPct ?? 30,
+  channelFloors: { ...DEFAULT_CHANNEL_FLOORS, ...(db().settings?.channelFloors ?? {}) },
+});
+export const saveSettings = (s: PricingSettings) => { const d = db(); commit({ ...d, settings: s }); };
+export const tierName = (channelId: string | null, fallback = '') => (channelId ? settings().tierNames[channelId] || fallback : fallback);
+
+/* ------------------------- Channel price "in force" ------------------------- */
+
+export interface CellPrice { price: number; list: PriceList }
+/** National channel price in force on a date, plus the next proposed / scheduled price (if any). */
+export const channelPrice = (principalId: string, channelId: string, productId: string, on: string): { current: CellPrice | null; next: CellPrice | null } => {
+  const scope = db().lists.filter((l) => l.type === 'CHANNEL' && l.principalId === principalId && l.channelId === channelId && !l.territoryIds.length && l.lines.some((x) => x.productId === productId));
+  const cur = scope.filter((l) => effectiveOn(l, on)).sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0];
+  const nxt = scope.filter((l) => (l.status === 'Active' && l.validFrom > on) || ['Pending', 'Draft', 'Rejected'].includes(l.status))
+    .sort((a, b) => b.version - a.version || b.validFrom.localeCompare(a.validFrom))[0];
+  const cell = (l?: PriceList): CellPrice | null => (l ? { price: l.lines.find((x) => x.productId === productId)!.price, list: l } : null);
+  return { current: cell(cur), next: cell(nxt) };
+};
+
+/* ------------------------------- Margin ladder ------------------------------- */
+
+export interface LadderTier { channelId: string; name: string; rank: number; resell: boolean }
+export interface LadderCell { channelId: string; price: number | null; companyMarginPct: number | null; resellerMarginPct: number | null; pctOfMrp: number | null; issues: string[] }
+
+/**
+ * Margins across the chain for one product.
+ * Company margin = (price − cost) / price. Reseller margin = (next tier's price − this price) / next tier's price;
+ * the last reseller is measured against the institution price, or MRP before GST.
+ */
+export const ladderFor = (product: Product, tiers: LadderTier[], prices: Record<string, number | null>): LadderCell[] => {
+  const ref = product.pricingReference;
+  const gst = gstOf(product);
+  const mrpEx = ref?.mrp ? ref.mrp / (1 + gst / 100) : null;
+  const cost = ref?.standardCost ?? 0;
+  const st = settings();
+  const ordered = [...tiers].sort((a, b) => a.rank - b.rank);
+  const resellers = ordered.filter((t) => t.resell && prices[t.channelId]);
+  const endTier = ordered.find((t) => !t.resell && prices[t.channelId]);
+  return ordered.map((t) => {
+    const price = prices[t.channelId] ?? null;
+    const issues: string[] = [];
+    if (!price) return { channelId: t.channelId, price: null, companyMarginPct: null, resellerMarginPct: null, pctOfMrp: null, issues };
+    const companyMarginPct = cost ? ((price - cost) / price) * 100 : null;
+    let resellerMarginPct: number | null = null;
+    if (t.resell) {
+      const i = resellers.findIndex((r) => r.channelId === t.channelId);
+      const sellAt = resellers[i + 1] ? prices[resellers[i + 1].channelId]! : endTier ? prices[endTier.channelId]! : mrpEx;
+      if (sellAt) resellerMarginPct = ((sellAt - price) / sellAt) * 100;
+      if (resellerMarginPct !== null && resellerMarginPct < 0) issues.push(`${t.name} is dearer than the price it sells at — the ladder is broken.`);
+      else if (resellerMarginPct !== null && st.channelFloors[t.channelId] && resellerMarginPct < st.channelFloors[t.channelId]) issues.push(`${t.name} keeps ${resellerMarginPct.toFixed(1)}% — below its ${st.channelFloors[t.channelId]}% floor.`);
+    }
+    if (companyMarginPct !== null && companyMarginPct < st.companyFloorPct) issues.push(`Company margin ${companyMarginPct.toFixed(1)}% is below ${st.companyFloorPct}%.`);
+    if (ref?.mrp && price * (1 + gst / 100) > ref.mrp + 0.001) issues.push('Above MRP incl. GST.');
+    if (ref?.govPriceCapEnforced && ref.govNpddCeiling && price * (1 + gst / 100) > ref.govNpddCeiling) issues.push('Above the government ceiling.');
+    return { channelId: t.channelId, price, companyMarginPct, resellerMarginPct, pctOfMrp: mrpEx ? (price / mrpEx) * 100 : null, issues };
+  });
+};
+
+/* ---------------------- Revise prices across channels ---------------------- */
+
+export interface CrossChannelPrice { channelId: string; productId: string; price: number }
+
+/**
+ * One revision, many channels: prices land in one draft per channel (a new version of the
+ * channel's national list, or a new list), all sharing a batch so they are approved together.
+ */
+export const proposeAcrossChannels = (input: { principalId: string; validFrom: string; by: string; note: string; submit: boolean; prices: CrossChannelPrice[]; products: Product[] }): Result & { listIds: string[]; batchId: string } => {
+  const batchId = newId('batch');
+  const byChannel = new Map<string, CrossChannelPrice[]>();
+  input.prices.filter((x) => x.price > 0).forEach((x) => byChannel.set(x.channelId, [...(byChannel.get(x.channelId) ?? []), x]));
+  const blocked: string[] = [];
+  byChannel.forEach((_, ch) => {
+    if (db().lists.some((l) => l.type === 'CHANNEL' && l.principalId === input.principalId && l.channelId === ch && !l.territoryIds.length && l.status === 'Pending'))
+      blocked.push(`${tierName(ch, ch)} already has a list waiting for approval — approve or reject it first.`);
+  });
+  if (blocked.length) return { ok: false, message: 'Can’t start this revision.', errors: blocked, listIds: [], batchId };
+  if (!byChannel.size) return { ok: false, message: 'No prices to save.', listIds: [], batchId };
+  const listIds: string[] = [];
+  byChannel.forEach((rows, ch) => {
+    const scope = db().lists.filter((l) => l.type === 'CHANNEL' && l.principalId === input.principalId && l.channelId === ch && !l.territoryIds.length);
+    let target = scope.filter((l) => ['Draft', 'Rejected'].includes(l.status)).sort((a, b) => b.version - a.version)[0];
+    if (!target) {
+      const active = scope.filter((l) => l.status === 'Active').sort((a, b) => b.version - a.version)[0];
+      target = (active && reviseList(active.id, input.by)) || undefined as unknown as PriceList;
+    }
+    if (!target) {
+      target = { ...blankList('CHANNEL', input.principalId, input.by), channelId: ch, name: `${tierName(ch, 'Channel')} price list`, history: [{ at: nowIso(), by: input.by, action: 'Created by multi-channel revision' }] };
+      target.code = `PL-${tierName(ch, 'CH').replace(/[^A-Za-z]/g, '').toUpperCase()}-${target.id.slice(-4).toUpperCase()}`;
+    }
+    const lines = [...target.lines.filter((x) => !rows.some((r) => r.productId === x.productId)),
+      ...rows.map((r) => {
+        const old = target.lines.find((x) => x.productId === r.productId);
+        // Keep slab discounts in the same proportion when the base price moves.
+        const f = old && old.price ? r.price / old.price : 1;
+        return { id: newId('ln'), productId: r.productId, price: r.price, slabs: (old?.slabs ?? []).map((sl) => ({ minQty: sl.minQty, price: Math.round(sl.price * f * 100) / 100 })) };
+      })];
+    put(touch({ ...target, lines, validFrom: input.validFrom > target.validFrom || target.status !== 'Active' ? input.validFrom : target.validFrom, batchId, status: 'Draft', notes: input.note || target.notes }, input.by, `Multi-channel revision (${rows.length} product(s))`, input.note));
+    listIds.push(target.id);
+  });
+  if (input.submit) {
+    const errs: string[] = [];
+    listIds.forEach((id) => { const r = submitList(getList(id)!, input.by, input.products, input.note); if (!r.ok) errs.push(`${getList(id)?.name}: ${(r.errors ?? [r.message]).join(' ')}`); });
+    if (errs.length) return { ok: false, message: 'Saved as drafts, but some lists could not be submitted.', errors: errs, listIds, batchId };
+    return { ok: true, message: `${listIds.length} channel list(s) sent for approval together.`, listIds, batchId };
+  }
+  return { ok: true, message: `${listIds.length} draft list(s) saved — open them to review, then submit.`, listIds, batchId };
+};
+
+/** Approve every pending list of a multi-channel revision. */
+export const approveBatch = (batchId: string, by: string, products: Product[], note = ''): Result => {
+  const pending = db().lists.filter((l) => l.batchId === batchId && l.status === 'Pending');
+  const errs: string[] = [];
+  pending.forEach((l) => { const r = approveList(l.id, by, products, note); if (!r.ok) errs.push(`${l.name}: ${r.message}`); });
+  if (errs.length) return { ok: false, message: 'Some lists were not approved.', errors: errs };
+  return { ok: true, message: `Approved ${pending.length} list(s) together.` };
 };

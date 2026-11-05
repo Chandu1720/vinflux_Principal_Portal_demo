@@ -41,7 +41,10 @@ export const initialUsers: CurrentUser[] = [
 export const initialPrincipals: Principal[] = [
   { id: "princ-biorad", name: "Biorad Medisys Private Limited", code: "BIORAD-MED", country: "India", role: "Manufacturer & Principal" },
   { id: "princ-zimmer", name: "Apex Surgical Ortho GmbH", code: "APEX-ORTHO", country: "Germany", role: "Technology Principal" },
-  { id: "princ-robotics", name: "OmniNav Surgical Robotics Corp", code: "OMNI-NAV", country: "USA", role: "Original Equipment Manufacturer" }
+  { id: "princ-robotics", name: "OmniNav Surgical Robotics Corp", code: "OMNI-NAV", country: "USA", role: "Original Equipment Manufacturer" },
+  { id: "princ-haritha", name: "Haritha Agro Sciences Ltd", code: "HARITHA-AGRI", country: "India", role: "Manufacturer & Principal — Agri inputs" },
+  { id: "princ-velocity", name: "Velocity Auto Components Pvt Ltd", code: "VELOCITY-AUTO", country: "India", role: "Manufacturer & Principal — Automotive aftermarket" },
+  { id: "princ-voltix", name: "Voltix Electronics India Pvt Ltd", code: "VOLTIX-ELEC", country: "India", role: "Brand Owner & Principal — Electronics" }
 ];
 
 export const initialPortfolios: Portfolio[] = [
@@ -148,16 +151,68 @@ export const initialPortfolios: Portfolio[] = [
     ]
   },
   {
-    id: "port-consumer",
-    name: "Consumer Products (FMCG)",
-    code: "PORT-FMCG",
-    description: "Packaged food, personal care and home care",
+    id: "port-agri",
+    name: "Agri Inputs",
+    code: "PORT-AGRI",
+    description: "Crop protection, seeds, plant nutrition and irrigation",
     categories: [
-      { id: "cat-hpc", name: "Personal & Home Care", code: "CAT-HPC", description: "Hand wash, sanitation and hygiene", subCategories: [
-        { id: "sub-handwash", name: "Hand Wash", code: "SUB-HW", description: "Liquid hand wash and refills" }
+      { id: "cat-agri-cp", name: "Crop Protection", code: "CAT-CP", description: "Insecticides, fungicides, herbicides", subCategories: [
+        { id: "sub-insecticide", name: "Insecticides", code: "SUB-INS", description: "Sucking and chewing pest control" },
+        { id: "sub-fungicide", name: "Fungicides", code: "SUB-FUN", description: "Disease control" },
+        { id: "sub-herbicide", name: "Herbicides", code: "SUB-HER", description: "Weed control" }
       ] },
-      { id: "cat-food", name: "Packaged Food", code: "CAT-FOOD", description: "Nutrition and snacks", subCategories: [
-        { id: "sub-nutrition", name: "Nutrition Drinks", code: "SUB-NUT", description: "Powdered nutrition and health drinks" }
+      { id: "cat-agri-seed", name: "Seeds", code: "CAT-SEED", description: "Field crop and vegetable seeds", subCategories: [
+        { id: "sub-field-seed", name: "Field Crops", code: "SUB-FLD", description: "Paddy, maize, cotton, pulses" },
+        { id: "sub-veg-seed", name: "Vegetables", code: "SUB-VEG", description: "Hybrid vegetable seeds" }
+      ] },
+      { id: "cat-agri-nutri", name: "Plant Nutrition", code: "CAT-NUT", description: "Water-soluble, micronutrient and bio-fertilisers", subCategories: [
+        { id: "sub-wsf", name: "Water-Soluble Fertilisers", code: "SUB-WSF", description: "Fertigation and foliar grades" },
+        { id: "sub-bio", name: "Bio-Fertilisers", code: "SUB-BIO", description: "Microbial and organic inputs" }
+      ] },
+      { id: "cat-agri-equip", name: "Irrigation & Equipment", code: "CAT-AEQ", description: "Drip, sprinklers and sprayers", subCategories: [
+        { id: "sub-drip", name: "Drip Irrigation", code: "SUB-DRIP", description: "Laterals, emitters, filters" },
+        { id: "sub-sprayer", name: "Sprayers", code: "SUB-SPR", description: "Knapsack and battery sprayers" }
+      ] }
+    ]
+  },
+  {
+    id: "port-auto",
+    name: "Automotive Aftermarket",
+    code: "PORT-AUTO",
+    description: "Spare parts, batteries, tyres and lubricants",
+    categories: [
+      { id: "cat-auto-brake", name: "Braking", code: "CAT-BRK", description: "Pads, shoes, discs", subCategories: [
+        { id: "sub-brake-pad", name: "Brake Pads", code: "SUB-BPAD", description: "Disc brake pads" },
+        { id: "sub-brake-disc", name: "Brake Discs", code: "SUB-BDSC", description: "Rotors and drums" }
+      ] },
+      { id: "cat-auto-elec", name: "Batteries & Electricals", code: "CAT-AEL", description: "Batteries, lighting, starters", subCategories: [
+        { id: "sub-battery", name: "Automotive Batteries", code: "SUB-BAT", description: "Lead-acid and AGM batteries" },
+        { id: "sub-lighting", name: "Lighting", code: "SUB-LGT", description: "Bulbs and LED lamps" }
+      ] },
+      { id: "cat-auto-tyre", name: "Tyres", code: "CAT-TYR", description: "Car and two-wheeler tyres", subCategories: [
+        { id: "sub-car-tyre", name: "Car Tyres", code: "SUB-CTY", description: "Passenger car radials" }
+      ] },
+      { id: "cat-auto-lube", name: "Lubricants", code: "CAT-LUB", description: "Engine oils and coolants", subCategories: [
+        { id: "sub-engine-oil", name: "Engine Oil", code: "SUB-EOIL", description: "Petrol and diesel engine oils" }
+      ] }
+    ]
+  },
+  {
+    id: "port-elec",
+    name: "Electronics & Appliances",
+    code: "PORT-ELEC",
+    description: "Consumer electronics, home appliances and components",
+    categories: [
+      { id: "cat-elec-appl", name: "Home Appliances", code: "CAT-APL", description: "Cooling and kitchen appliances", subCategories: [
+        { id: "sub-ac", name: "Air Conditioners", code: "SUB-AC", description: "Split and window ACs" },
+        { id: "sub-fridge", name: "Refrigerators", code: "SUB-REF", description: "Direct-cool and frost-free" }
+      ] },
+      { id: "cat-elec-cons", name: "Consumer Electronics", code: "CAT-CE", description: "Power, audio and accessories", subCategories: [
+        { id: "sub-charger", name: "Chargers & Power", code: "SUB-CHG", description: "Adapters and power banks" },
+        { id: "sub-audio", name: "Audio", code: "SUB-AUD", description: "Earphones and speakers" }
+      ] },
+      { id: "cat-elec-comp", name: "Components", code: "CAT-CMP", description: "Modules and sensors for OEMs", subCategories: [
+        { id: "sub-power-module", name: "Power Modules", code: "SUB-PWM", description: "SMPS and DC-DC modules" }
       ] }
     ]
   }
@@ -235,14 +290,25 @@ export const initialProductTypes: ProductType[] = [
     industryPackId: "general"
   },
   { id: "type-instrument", name: "Surgical Instrument Set", code: "INSTR-SET", nature: "Physical Asset", defaultTracking: "Serial", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: true, variantAllowed: false, attributeTemplate: "tpl-instrument", defaultMinStockThreshold: 2, industryPackId: "medical-devices" },
-  { id: "type-fmcg-food", name: "Packaged Food & Beverage", code: "FMCG-FOOD", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-fmcg-food", defaultMinStockThreshold: 200, industryPackId: "fmcg" },
-  { id: "type-fmcg-home", name: "Personal & Home Care", code: "FMCG-HPC", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-fmcg-home", defaultMinStockThreshold: 200, industryPackId: "fmcg" },
+  { id: "type-agri-cp", name: "Crop Protection Chemical", code: "AGRI-CP", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-agri-cp", defaultMinStockThreshold: 200, industryPackId: "agri" },
+  { id: "type-agri-seed", name: "Seeds", code: "AGRI-SEED", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-agri-seed", defaultMinStockThreshold: 100, industryPackId: "agri" },
+  { id: "type-agri-fert", name: "Fertiliser & Plant Nutrition", code: "AGRI-FERT", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-agri-fert", defaultMinStockThreshold: 200, industryPackId: "agri" },
+  { id: "type-agri-equip", name: "Farm Equipment & Irrigation", code: "AGRI-EQP", nature: "Physical Asset", defaultTracking: "Serial", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-agri-equip", defaultMinStockThreshold: 10, industryPackId: "agri" },
+  { id: "type-auto-part", name: "Automotive Spare Part", code: "AUTO-PART", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-auto-part", defaultMinStockThreshold: 50, industryPackId: "automotive" },
+  { id: "type-auto-battery", name: "Automotive Battery", code: "AUTO-BATT", nature: "Physical Goods", defaultTracking: "Serial", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-auto-battery", defaultMinStockThreshold: 20, industryPackId: "automotive" },
+  { id: "type-auto-tyre", name: "Tyre", code: "AUTO-TYRE", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-auto-tyre", defaultMinStockThreshold: 40, industryPackId: "automotive" },
+  { id: "type-auto-lube", name: "Lubricant & Fluid", code: "AUTO-LUBE", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-auto-lube", defaultMinStockThreshold: 100, industryPackId: "automotive" },
+  { id: "type-elec-consumer", name: "Consumer Electronics", code: "ELEC-CE", nature: "Physical Goods", defaultTracking: "Serial", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-elec-consumer", defaultMinStockThreshold: 50, industryPackId: "electronics" },
+  { id: "type-elec-appliance", name: "Home Appliance", code: "ELEC-APPL", nature: "Physical Asset", defaultTracking: "Serial", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-elec-appliance", defaultMinStockThreshold: 10, industryPackId: "electronics" },
+  { id: "type-elec-component", name: "Electronic Component", code: "ELEC-COMP", nature: "Physical Goods", defaultTracking: "Batch / Lot", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-elec-component", defaultMinStockThreshold: 500, industryPackId: "electronics" },
   { id: "type-general", name: "General Merchandise", code: "GENERAL", nature: "Physical Goods", defaultTracking: "None", isStockable: true, requiresPackaging: true, requiresRegulatoryDossier: false, variantAllowed: true, attributeTemplate: "tpl-general", defaultMinStockThreshold: 20, industryPackId: "general" }
 ];
 
 export const initialIndustryPacks: IndustryPack[] = [
-  { id: "medical-devices", name: "Medical Devices", description: "CDSCO risk class & licence, UDI, implantable / sterile, instrument sets", enabled: true, regulatory: "cdsco", defaultTracking: "Batch + Serial", defaultHsn: "90213100", defaultTax: "5%" },
-  { id: "fmcg", name: "FMCG (food, personal & home care)", description: "Legal Metrology declarations (net quantity, MRP, consumer care), FSSAI for food, shelf life, case pack", enabled: true, regulatory: "legal-metrology", defaultTracking: "Batch / Lot", defaultHsn: "", defaultTax: "18%" },
+  { id: "medical-devices", name: "Medical Devices & Instruments", description: "CDSCO risk class & licence (MD-5 / MD-9 / MD-15), UDI, implantable / sterile, instrument sets and kits", enabled: true, regulatory: "cdsco", defaultTracking: "Batch + Serial", defaultHsn: "90213100", defaultTax: "5%" },
+  { id: "agri", name: "Agri Inputs", description: "Crop protection (CIB&RC registration, toxicity label), seeds (Seeds Act class, germination), fertilisers (FCO grade & certificate), irrigation equipment", enabled: true, regulatory: "schema", defaultTracking: "Batch / Lot", defaultHsn: "", defaultTax: "18%" },
+  { id: "automotive", name: "Automotive Parts", description: "Part number & OEM cross-reference, vehicle fitment, warranty months / km, BIS (ISI) for tyres & batteries, battery EPR, core charge", enabled: true, regulatory: "schema", defaultTracking: "Batch / Lot", defaultHsn: "87089900", defaultTax: "18%" },
+  { id: "electronics", name: "Electronics & Appliances", description: "Model number, BIS CRS registration, BEE star label, E-waste EPR, WPC for wireless, serial / IMEI tracking, warranty", enabled: true, regulatory: "schema", defaultTracking: "Serial", defaultHsn: "", defaultTax: "18%" },
   { id: "general", name: "General Merchandise", description: "Any other goods, software and services — common fields only", enabled: true, regulatory: null, defaultTracking: "None", defaultHsn: "", defaultTax: "18%" },
 ];
 
@@ -304,17 +370,52 @@ export const initialAttributeTemplates: Record<string, AttributeDefinition[]> = 
     { id: "attr-sterility", name: "Sterilization Mode", type: "select", options: ["Gamma Radiation (25 kGy)", "Ethylene Oxide (EtO)", "Autoclave / Steam"], required: true, isVariant: false, group: "Compliance & Sterility" },
     { id: "attr-tray", name: "Tray / Case", type: "text", defaultValue: "Autoclavable tray with lid", required: false, isVariant: false, group: "Packaging" }
   ],
-  "tpl-fmcg-food": [
-    { id: "attr-flavour", name: "Flavour / Variant", type: "select", options: ["Original", "Masala", "Mint", "Chocolate", "Unflavoured"], required: true, isVariant: true, group: "Variant" },
-    { id: "attr-pack-size", name: "Pack Size", type: "select", options: ["50 g", "100 g", "200 g", "500 g", "1 kg", "200 ml", "500 ml", "1 L"], required: true, isVariant: true, group: "Variant" },
-    { id: "attr-pack-type", name: "Packaging Type", type: "select", options: ["Pouch", "Jar", "Carton", "Bottle", "Can"], required: true, isVariant: false, group: "Packaging" },
-    { id: "attr-storage", name: "Storage", type: "select", options: ["Ambient", "Chilled (2–8 °C)", "Frozen (−18 °C)"], required: true, isVariant: false, group: "Handling" }
+  "tpl-agri-cp": [
+    { id: "attr-agri-pack", name: "Pack Size", type: "select", options: ["100 ml", "250 ml", "500 ml", "1 L", "1 kg", "5 kg"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-agri-target", name: "Target crops & pests", type: "text", required: true, isVariant: false, group: "Usage" },
+    { id: "attr-agri-dose", name: "Dose per acre", type: "text", required: false, isVariant: false, group: "Usage" }
   ],
-  "tpl-fmcg-home": [
-    { id: "attr-fragrance", name: "Fragrance / Variant", type: "select", options: ["Lemon", "Lavender", "Neem", "Aloe Vera", "Unscented"], required: true, isVariant: true, group: "Variant" },
-    { id: "attr-pack-size", name: "Pack Size", type: "select", options: ["100 ml", "200 ml", "500 ml", "750 ml", "1 L", "5 L"], required: true, isVariant: true, group: "Variant" },
-    { id: "attr-pack-type", name: "Packaging Type", type: "select", options: ["Pump Bottle", "Refill Pouch", "Tube", "Can"], required: true, isVariant: false, group: "Packaging" },
-    { id: "attr-skin", name: "Suitable For", type: "text", defaultValue: "All skin types", required: false, isVariant: false, group: "Usage" }
+  "tpl-agri-seed": [
+    { id: "attr-seed-pack", name: "Pack Size", type: "select", options: ["1 kg", "4 kg", "10 kg", "25 kg"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-seed-maturity", name: "Maturity (days)", type: "number", required: false, isVariant: false, group: "Agronomy" },
+    { id: "attr-seed-treatment", name: "Seed treatment", type: "text", required: false, isVariant: false, group: "Agronomy" }
+  ],
+  "tpl-agri-fert": [
+    { id: "attr-fert-pack", name: "Pack Size", type: "select", options: ["1 kg", "5 kg", "25 kg", "50 kg"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-fert-application", name: "Application", type: "select", options: ["Foliar spray", "Fertigation", "Soil application"], required: true, isVariant: false, group: "Usage" }
+  ],
+  "tpl-agri-equip": [
+    { id: "attr-agri-power", name: "Power source", type: "select", options: ["Manual", "Electric", "Solar", "Diesel", "Tractor PTO"], required: true, isVariant: false, group: "Specification" },
+    { id: "attr-agri-capacity", name: "Capacity / coverage", type: "text", required: false, isVariant: false, group: "Specification" }
+  ],
+  "tpl-auto-part": [
+    { id: "attr-auto-position", name: "Position", type: "select", options: ["Front", "Rear", "Left", "Right", "Universal"], required: false, isVariant: false, group: "Specification" },
+    { id: "attr-auto-material", name: "Material / compound", type: "text", required: false, isVariant: false, group: "Specification" }
+  ],
+  "tpl-auto-battery": [
+    { id: "attr-batt-ah", name: "Capacity", type: "number", unit: "Ah", required: true, isVariant: false, group: "Electrical" },
+    { id: "attr-batt-terminal", name: "Terminal layout", type: "select", options: ["Left (L)", "Right (R)"], required: true, isVariant: true, group: "Variant" },
+    { id: "attr-batt-type", name: "Battery type", type: "select", options: ["Flooded lead-acid", "Maintenance-free (SMF)", "AGM", "EFB"], required: true, isVariant: false, group: "Electrical" }
+  ],
+  "tpl-auto-tyre": [
+    { id: "attr-tyre-load", name: "Load index / speed rating", type: "text", required: true, isVariant: false, group: "Specification" },
+    { id: "attr-tyre-tube", name: "Construction", type: "select", options: ["Tubeless", "Tube-type"], required: true, isVariant: false, group: "Specification" }
+  ],
+  "tpl-auto-lube": [
+    { id: "attr-lube-pack", name: "Pack Size", type: "select", options: ["900 ml", "1 L", "3.5 L", "5 L", "20 L"], required: true, isVariant: true, group: "Variant" }
+  ],
+  "tpl-elec-consumer": [
+    { id: "attr-colour", name: "Colour", type: "text", required: false, isVariant: true, group: "Variant" },
+    { id: "attr-elec-ports", name: "Ports / connectivity", type: "text", required: false, isVariant: false, group: "Specification" }
+  ],
+  "tpl-elec-appliance": [
+    { id: "attr-elec-capacity", name: "Capacity", type: "text", required: true, isVariant: false, group: "Specification" },
+    { id: "attr-colour", name: "Colour", type: "text", required: false, isVariant: true, group: "Variant" },
+    { id: "attr-elec-refrigerant", name: "Refrigerant / technology", type: "text", required: false, isVariant: false, group: "Specification" }
+  ],
+  "tpl-elec-component": [
+    { id: "attr-elec-input", name: "Input range", type: "text", required: false, isVariant: false, group: "Electrical" },
+    { id: "attr-elec-temp", name: "Operating temperature", type: "text", required: false, isVariant: false, group: "Specification" }
   ],
   "tpl-general": [
     { id: "attr-colour", name: "Colour", type: "text", required: false, isVariant: true, group: "Variant" },
@@ -344,8 +445,7 @@ export const initialValidationRules: ValidationRule[] = [
   { id: "val-licence", name: "Valid CDSCO Licence", rule: "Products need a licence of the right form for their risk class (MD-5 for A/B, MD-9 for C/D, MD-15 if imported), valid on the approval date", enforced: true, severity: "Blocking Error" },
   { id: "val-price-ceiling", name: "MRP Within Government Ceiling", rule: "Where a DPCO / NPPA ceiling applies, MRP must not exceed it", enforced: true, severity: "Blocking Error" },
   { id: "val-maker-checker", name: "Maker-Checker", rule: "The person who submits a product cannot approve it", enforced: true, severity: "Blocking Error" },
-  { id: "val-legal-metrology", name: "Legal Metrology Declarations (FMCG)", rule: "Packaged goods need net quantity, MRP, country of origin and consumer-care details", enforced: true, severity: "Blocking Error" },
-  { id: "val-fssai", name: "FSSAI Licence (Food)", rule: "Food products need a valid 14-digit FSSAI licence, veg / non-veg mark and shelf life", enforced: true, severity: "Blocking Error" },
+  { id: "val-pack-compliance", name: "Industry Compliance (Agri, Automotive, Electronics)", rule: "Registrations required by the product's industry: CIB&RC / Seeds Act / FCO, BIS & EPR for tyres and batteries, BIS CRS, BEE and E-waste EPR for electronics; expired licences block approval", enforced: true, severity: "Blocking Error" },
   { id: "val-required-attrs", name: "Required Attributes", rule: "Attributes marked required in the product type template must be filled", enforced: true, severity: "Blocking Error" }
 ];
 
@@ -466,8 +566,9 @@ export const initialProducts: Product[] = [
       engineSource: "VinFlux Pricing Engine v3.2",
       lastSync: "2026-10-28 09:15",
       mrp: 48500,
+      standardCost: 18200,
       currency: "INR (₹)",
-      dealerTransferCap: 32200,
+      dealerTransferCap: 31500,
       institutionalTenderCap: 29800,
       govPriceCapEnforced: true,
       govNpddCeiling: 54000,
@@ -560,6 +661,7 @@ export const initialProducts: Product[] = [
       engineSource: "VinFlux Pricing Engine v3.2",
       lastSync: "2026-10-27 11:20",
       mrp: 345000,
+      standardCost: 148000,
       currency: "INR (₹)",
       dealerTransferCap: 265000,
       institutionalTenderCap: 250000,
@@ -651,6 +753,7 @@ export const initialProducts: Product[] = [
       engineSource: "VinFlux Pricing Engine v3.2",
       lastSync: "2026-10-25 09:40",
       mrp: 4200,
+      standardCost: 1150,
       currency: "INR (₹)",
       dealerTransferCap: 2600,
       institutionalTenderCap: 2350,
@@ -738,6 +841,7 @@ export const initialProducts: Product[] = [
       engineSource: "VinFlux Pricing Engine v3.2",
       lastSync: "2026-10-22 15:10",
       mrp: 120000,
+      standardCost: 21000,
       currency: "INR (₹)",
       dealerTransferCap: 95000,
       institutionalTenderCap: 88000,
@@ -825,8 +929,9 @@ export const initialProducts: Product[] = [
       engineSource: "VinFlux Pricing Engine v3.2",
       lastSync: "2026-10-29 08:30",
       mrp: 650000,
+      standardCost: 276000,
       currency: "INR (₹)",
-      dealerTransferCap: 520000,
+      dealerTransferCap: 500000,
       institutionalTenderCap: 490000,
       govPriceCapEnforced: false,
       marginFloorPercent: 20.0,
@@ -915,6 +1020,7 @@ export const initialProducts: Product[] = [
       engineSource: "Not Connected (Standalone Mode)",
       lastSync: "--",
       mrp: 0,
+      standardCost: 9800,
       currency: "INR (₹)",
       dealerTransferCap: 0,
       institutionalTenderCap: 0,
@@ -955,55 +1061,87 @@ if (revisionSet) {
   ];
 }
 
-/* FMCG demo product — shows the same Product Master serving a different industry pack. */
-const handWashBase = initialProducts.find((p) => p.id === "PRD-CSM-003");
-if (handWashBase) {
-  const hw: Product = JSON.parse(JSON.stringify(handWashBase));
-  Object.assign(hw, {
-    id: "PRD-FMCG-007",
-    name: "CareNest Liquid Hand Wash",
-    code: "8901234500019",
-    description: "Germ-protection liquid hand wash for homes, clinics and hospitals. Pump bottle and refill pouch.",
-    portfolioId: "port-consumer",
-    categoryId: "cat-hpc",
-    subCategoryId: "sub-handwash",
-    brand: "CareNest",
-    productTypeId: "type-fmcg-home",
-    baseUom: "Each",
-    lifecycleStatus: "Active",
-    approvalStatus: "Approved",
-    trackingMode: "Batch / Lot",
-    hsnCode: "34013019",
-    taxRate: "18%",
-    hasVariants: true,
-    variantCount: 3,
-    variantAxes: ["Fragrance / Variant", "Pack Size"],
-    attributes: { "attr-fragrance": "Lemon", "attr-pack-size": "200 ml", "attr-pack-type": "Pump Bottle", "attr-skin": "All skin types" },
-    variants: [
-      { id: "CN-HW-LEMON-200ML", sku: "CN-HW-LEMON-200ML", name: "CareNest Hand Wash Lemon 200 ml", size: "Lemon", thickness: "200 ml", side: "N/A", status: "Active", gtin: "8901234500026" },
-      { id: "CN-HW-LEMON-750ML", sku: "CN-HW-LEMON-750ML", name: "CareNest Hand Wash Lemon 750 ml Refill", size: "Lemon", thickness: "750 ml", side: "N/A", status: "Active", gtin: "8901234500033" },
-      { id: "CN-HW-NEEM-200ML", sku: "CN-HW-NEEM-200ML", name: "CareNest Hand Wash Neem 200 ml", size: "Neem", thickness: "200 ml", side: "N/A", status: "Active", gtin: "8901234500040" },
-    ],
-    identifiers: [
-      { type: "Internal SKU", value: "CN-HW", isPrimary: true, uom: "Product level", source: "VinFlux rule", status: "Active" },
-      { type: "GTIN", value: "8901234500019", isPrimary: false, uom: "Product level", source: "GS1 India", status: "Active" },
-    ],
-    uomHierarchy: [
-      { level: "Each", uom: "Each", factor: 1, isBase: true, isSales: true, isPurchase: false, dimensions: "7 × 5 × 18 cm", weight: "0.23 kg", barcode: "8901234500019" },
-      { level: "Case", uom: "Case (24)", factor: 24, isBase: false, isSales: false, isPurchase: true, dimensions: "40 × 30 × 20 cm", weight: "5.8 kg", barcode: "18901234500016" },
-    ],
-    trackingRules: { mode: "Batch / Lot", mfgDateRequired: true, expiryDateRequired: true, minShelfLifeDistributorDays: 540, minShelfLifeInstitutionDays: 365, udiDiRequired: false, qcInspectionRequired: true },
-    documents: [
-      { name: "Product Specification Sheet", type: "Technical Specification", version: "v1.2", effective: "2026-01-10", expiry: "", status: "Approved", size: "0.6 MB PDF" },
-    ],
-    pricingReference: { ...hw.pricingReference, mrp: 99, dealerTransferCap: 78, institutionalTenderCap: 70, govPriceCapEnforced: false, govNpddCeiling: undefined, marginFloorPercent: 12, priceListsLinked: ["FMCG General Trade"] },
-    regulatory: undefined,
-    fmcg: { netQuantity: 200, netQuantityUnit: "ml", shelfLifeMonths: 24, countryOfOrigin: "India", consumerCare: "1800-123-4567 · care@carenest.example", unitsPerCase: 24, isFood: false, fssaiLicenceNo: "", fssaiValidUntil: "", foodMark: "" },
-    isKit: false,
-    kitComponents: [],
-    updatedBy: "Dr. Arvind Rao",
-    approvedBy: "Dr. Arvind Rao",
-    changeHistory: [{ field: "Created", prevValue: "--", newValue: "Active", changedBy: "Dr. Arvind Rao", changedAt: "2026-10-15 10:00", reason: "FMCG range launch" }],
+/* Demo catalogues for the other focus industries — the same Product Master, different industry packs. */
+const industryBase = initialProducts.find((p) => p.id === "PRD-CSM-003");
+interface IndustrySeed {
+  id: string; name: string; gtin: string; principalId: string; portfolioId: string; categoryId: string; subCategoryId: string; brand: string;
+  productTypeId: string; trackingMode: string; hsnCode: string; taxRate: string; baseUom: string; description: string; sku: string; erp: string;
+  attributes: Record<string, string>; compliance: Record<string, string>; mrp: number; cost: number; tradeFloor: number; tenderFloor: number;
+  expiry: boolean; caseQty: number; lifecycleStatus?: Product["lifecycleStatus"]; approvalStatus?: Product["approvalStatus"];
+}
+const INDUSTRY_SEEDS: IndustrySeed[] = [
+  { id: "PRD-AGR-101", name: "Haritha Shield Imidacloprid 17.8% SL", gtin: "8904561001013", principalId: "princ-haritha", portfolioId: "port-agri", categoryId: "cat-agri-cp", subCategoryId: "sub-insecticide", brand: "Haritha Shield",
+    productTypeId: "type-agri-cp", trackingMode: "Batch / Lot", hsnCode: "38089199", taxRate: "18%", baseUom: "Bottle", sku: "HS-IMI-250", erp: "MAT-HAR-500101",
+    description: "Systemic insecticide for sucking pests (aphids, jassids, thrips, whitefly) in cotton, paddy and chilli.",
+    attributes: { "attr-agri-pack": "250 ml", "attr-agri-target": "Cotton, paddy, chilli — aphids, jassids, thrips, whitefly", "attr-agri-dose": "40–50 ml per acre" },
+    compliance: { cibrc: "CIR-142,861/2019-Imidacloprid (SL) (4122)-1452", activeIngredient: "Imidacloprid 17.8% SL", formulation: "SL", toxicity: "Yellow — highly toxic", insLicence: "TS/INS/MFG/2021/0187", insLicenceValid: "2027-03-31", netQty: "250 ml", season: "All seasons" },
+    mrp: 420, cost: 180, tradeFloor: 260, tenderFloor: 250, expiry: true, caseQty: 40 },
+  { id: "PRD-AGR-102", name: "Haritha Gold Hybrid Paddy HP-226", gtin: "8904561001020", principalId: "princ-haritha", portfolioId: "port-agri", categoryId: "cat-agri-seed", subCategoryId: "sub-field-seed", brand: "Haritha Gold",
+    productTypeId: "type-agri-seed", trackingMode: "Batch / Lot", hsnCode: "10061010", taxRate: "0%", baseUom: "Bag", sku: "HG-HP226-10", erp: "MAT-HAR-500102",
+    description: "Medium-duration hybrid paddy (125–130 days) for Kharif, with long slender grain and high tillering.",
+    attributes: { "attr-seed-pack": "10 kg", "attr-seed-maturity": "128", "attr-seed-treatment": "Thiram + Carbendazim treated" },
+    compliance: { variety: "HP-226 (hybrid)", crop: "Paddy", seedClass: "Truthfully labelled", germination: "80", purity: "98", seedLicence: "SD/TS/2024/00562", seedLicenceValid: "2026-12-20", netQty: "10 kg", season: "Kharif" },
+    mrp: 3200, cost: 1450, tradeFloor: 2300, tenderFloor: 2200, expiry: true, caseQty: 1 },
+  { id: "PRD-AGR-103", name: "NutriGrow 19:19:19 Water-Soluble Fertiliser", gtin: "8904561001037", principalId: "princ-haritha", portfolioId: "port-agri", categoryId: "cat-agri-nutri", subCategoryId: "sub-wsf", brand: "NutriGrow",
+    productTypeId: "type-agri-fert", trackingMode: "Batch / Lot", hsnCode: "31052000", taxRate: "5%", baseUom: "Pack", sku: "NG-191919-1", erp: "MAT-HAR-500103",
+    description: "Fully water-soluble NPK for drip fertigation and foliar spray during vegetative growth.",
+    attributes: { "attr-fert-pack": "1 kg", "attr-fert-application": "Fertigation" },
+    compliance: { fcoCategory: "Water-soluble", npk: "19-19-19", fcoCert: "FCO/TS/WSF/2022/031", fcoValid: "2027-08-31", subsidised: "No", netQty: "1 kg", season: "All seasons" },
+    mrp: 260, cost: 128, tradeFloor: 180, tenderFloor: 175, expiry: false, caseQty: 25 },
+  { id: "PRD-AUT-201", name: "Velocity Ceramic Front Brake Pad Set — Swift / Dzire", gtin: "8905672002012", principalId: "princ-velocity", portfolioId: "port-auto", categoryId: "cat-auto-brake", subCategoryId: "sub-brake-pad", brand: "Velocity",
+    productTypeId: "type-auto-part", trackingMode: "Batch / Lot", hsnCode: "87083000", taxRate: "18%", baseUom: "Set", sku: "VBP-MS-2101", erp: "MAT-VEL-700201",
+    description: "Low-dust ceramic disc brake pads, front axle set of 4 with wear indicator.",
+    attributes: { "attr-auto-position": "Front", "attr-auto-material": "Ceramic, copper-free" },
+    compliance: { partNo: "VBP-MS-2101", partSource: "Aftermarket", oemRef: "55810M68K00", segment: "Passenger car", fitment: "Maruti Suzuki Swift 2018–2024; Dzire 2017–2024; Baleno 2019–2023", warrantyMonths: "12", warrantyKm: "20000" },
+    mrp: 1890, cost: 720, tradeFloor: 1100, tenderFloor: 1050, expiry: false, caseQty: 20 },
+  { id: "PRD-AUT-202", name: "Velocity VL-35L 12V 35Ah Car Battery", gtin: "8905672002029", principalId: "princ-velocity", portfolioId: "port-auto", categoryId: "cat-auto-elec", subCategoryId: "sub-battery", brand: "Velocity",
+    productTypeId: "type-auto-battery", trackingMode: "Serial", hsnCode: "85071000", taxRate: "18%", baseUom: "Each", sku: "VL-35L", erp: "MAT-VEL-700202",
+    description: "Maintenance-free 35Ah battery for hatchbacks and compact sedans. 48-month warranty (24 free + 24 pro-rata).",
+    attributes: { "attr-batt-ah": "35", "attr-batt-terminal": "Left (L)", "attr-batt-type": "Maintenance-free (SMF)" },
+    compliance: { partNo: "VL-35L", partSource: "Aftermarket", segment: "Passenger car", fitment: "Swift, Baleno, i20, Tiago, Altroz and other hatchbacks", warrantyMonths: "48", bisLicence: "CM/L-7600123456", bisValid: "2027-01-31", eprBattery: "BWM/EPR/2023/TS/00871", coreCharge: "650" },
+    mrp: 5400, cost: 2400, tradeFloor: 3400, tenderFloor: 3300, expiry: false, caseQty: 1 },
+  { id: "PRD-ELE-301", name: "Voltix 65W GaN USB-C Fast Charger", gtin: "8906783003011", principalId: "princ-voltix", portfolioId: "port-elec", categoryId: "cat-elec-cons", subCategoryId: "sub-charger", brand: "Voltix",
+    productTypeId: "type-elec-consumer", trackingMode: "Batch / Lot", hsnCode: "85044030", taxRate: "18%", baseUom: "Each", sku: "VX-GAN65", erp: "MAT-VOL-900301",
+    description: "Compact GaN charger with 2 × USB-C and 1 × USB-A, PD 3.0 / PPS, for laptops and phones.",
+    attributes: { "attr-colour": "Black", "attr-elec-ports": "2 × USB-C, 1 × USB-A" },
+    compliance: { model: "VX-GAN65", ratedPower: "100–240 V AC · 65 W", warrantyMonths: "12", bisRequired: "Yes", bisCrs: "R-41234567", isStandard: "IS 13252 (Part 1)", bisValid: "2027-05-31", eprEwaste: "B-29016(2471)/(EPR)/23", imei: "No" },
+    mrp: 2499, cost: 980, tradeFloor: 1450, tenderFloor: 1400, expiry: false, caseQty: 50 },
+  { id: "PRD-ELE-302", name: "Voltix 1.5 Ton 5-Star Inverter Split AC", gtin: "8906783003028", principalId: "princ-voltix", portfolioId: "port-elec", categoryId: "cat-elec-appl", subCategoryId: "sub-ac", brand: "Voltix",
+    productTypeId: "type-elec-appliance", trackingMode: "Serial", hsnCode: "84151010", taxRate: "18%", baseUom: "Set", sku: "VX-IAC18-5S", erp: "MAT-VOL-900302",
+    description: "Dual-rotary inverter split AC with copper condenser and R32 refrigerant. Indoor and outdoor units serialised.",
+    attributes: { "attr-elec-capacity": "1.5 Ton", "attr-colour": "White", "attr-elec-refrigerant": "R32 · dual-rotary inverter" },
+    compliance: { model: "VX-IAC18-5S", ratedPower: "230 V · 1,450 W", warrantyMonths: "12", bisRequired: "No", beeStar: "5 star", beeValid: "2026-12-31", eprEwaste: "B-29016(2471)/(EPR)/23", wpc: "ETA-SD-20240512345" },
+    mrp: 52990, cost: 24500, tradeFloor: 34000, tenderFloor: 33000, expiry: false, caseQty: 1, lifecycleStatus: "Pending Approval", approvalStatus: "Pending Approval" },
+];
+const pack14 = (g: string) => { const body = `1${g.slice(0, 12)}`; let sum = 0; body.split("").reverse().forEach((d, i) => { sum += Number(d) * (i % 2 === 0 ? 3 : 1); }); return body + ((10 - (sum % 10)) % 10); };
+if (industryBase) {
+  INDUSTRY_SEEDS.forEach((x) => {
+    const p: Product = JSON.parse(JSON.stringify(industryBase));
+    const status = x.lifecycleStatus ?? "Active";
+    Object.assign(p, {
+      id: x.id, name: x.name, code: x.gtin, description: x.description, principalId: x.principalId,
+      portfolioId: x.portfolioId, categoryId: x.categoryId, subCategoryId: x.subCategoryId, brand: x.brand, productTypeId: x.productTypeId,
+      baseUom: x.baseUom, lifecycleStatus: status, approvalStatus: x.approvalStatus ?? "Approved", trackingMode: x.trackingMode,
+      hsnCode: x.hsnCode, taxRate: x.taxRate, hasVariants: false, variantCount: 0, variantAxes: [], variants: [], attributes: x.attributes,
+      externalRef: x.erp,
+      identifiers: [
+        { type: "Internal SKU", value: x.sku, isPrimary: true, uom: "Product level", source: "VinFlux rule", status: "Active" },
+        { type: "GTIN", value: x.gtin, isPrimary: false, uom: "Product level", source: "GS1 India", status: "Active" },
+      ],
+      uomHierarchy: x.caseQty > 1 ? [
+        { level: "Each", uom: x.baseUom, factor: 1, isBase: true, isSales: true, isPurchase: false, dimensions: "—", weight: "—", barcode: x.gtin },
+        { level: "Case", uom: `Case (${x.caseQty})`, factor: x.caseQty, isBase: false, isSales: true, isPurchase: true, dimensions: "—", weight: "—", barcode: pack14(x.gtin) },
+      ] : [{ level: "Each", uom: x.baseUom, factor: 1, isBase: true, isSales: true, isPurchase: true, dimensions: "—", weight: "—", barcode: x.gtin }],
+      trackingRules: { mode: x.trackingMode, mfgDateRequired: x.expiry || x.trackingMode === "Serial", expiryDateRequired: x.expiry, minShelfLifeDistributorDays: x.expiry ? 180 : 0, minShelfLifeInstitutionDays: x.expiry ? 90 : 0, udiDiRequired: false, qcInspectionRequired: x.expiry },
+      documents: [{ name: "Product Specification Sheet", type: "Technical Specification", version: "v1.0", effective: "2026-04-01", expiry: "", status: "Approved", size: "0.4 MB PDF" }],
+      pricingReference: { ...industryBase.pricingReference, mrp: x.mrp, standardCost: x.cost, dealerTransferCap: x.tradeFloor, institutionalTenderCap: x.tenderFloor, govPriceCapEnforced: false, govNpddCeiling: undefined, marginFloorPercent: 10, priceListsLinked: [] },
+      integrationMapping: [{ system: "SAP S/4HANA Enterprise", entityType: "Material Master", externalId: x.erp, status: "Synchronized", lastSync: "2026-10-30 09:00", mappingDirection: "Bi-directional" }],
+      regulatory: undefined, compliance: x.compliance, isKit: false, kitComponents: [],
+      updatedBy: "Dr. Arvind Rao", updatedAt: "2026-10-30",
+      submittedBy: status === "Pending Approval" ? "Priya Menon" : undefined, submittedAt: status === "Pending Approval" ? "2026-11-02" : undefined,
+      approvedBy: status === "Active" ? "Dr. Arvind Rao" : null,
+      changeHistory: [{ field: "Created", prevValue: "--", newValue: status, changedBy: "Priya Menon", changedAt: "2026-10-20 10:00", reason: "Catalogue onboarding" }],
+    });
+    initialProducts.push(p);
   });
-  initialProducts.push(hw);
 }

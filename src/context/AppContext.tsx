@@ -110,11 +110,23 @@ interface AppContextType {
 export interface ActionResult { ok: boolean; message: string; errors?: string[] }
 
 const PRODUCTS_KEY = 'vinflux.products.v3';
-const PACKS_KEY = 'vinflux.industryPacks.v1';
+const PACKS_KEY = 'vinflux.industryPacks.v2';
 const loadProducts = (): Product[] => {
   try {
     const raw = localStorage.getItem(PRODUCTS_KEY);
-    if (raw) return JSON.parse(raw) as Product[];
+    if (raw) {
+      // Fill fields added after the data was saved (e.g. standard cost) from the seed.
+      const stored = (JSON.parse(raw) as (Product & { fmcg?: unknown })[])
+        // FMCG was removed as an industry pack; its demo products go too.
+        .filter((p) => !p.productTypeId?.startsWith('type-fmcg') && p.portfolioId !== 'port-consumer');
+      // Demo products added in later releases (new industries) appear without wiping the user's data.
+      const added = initialProducts.filter((x) => !stored.some((p) => p.id === x.id) && /^PRD-(AGR|AUT|ELE)-/.test(x.id));
+      return [...stored, ...added].map((p) => {
+        const seed = initialProducts.find((x) => x.id === p.id);
+        return seed && p.pricingReference && p.pricingReference.standardCost === undefined && seed.pricingReference?.standardCost !== undefined
+          ? { ...p, pricingReference: { ...p.pricingReference, standardCost: seed.pricingReference.standardCost, dealerTransferCap: seed.pricingReference.dealerTransferCap, institutionalTenderCap: seed.pricingReference.institutionalTenderCap } } : p;
+      });
+    }
   } catch { /* storage unavailable */ }
   return initialProducts;
 };

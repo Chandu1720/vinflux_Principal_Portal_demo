@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext.tsx';
 import type { Product } from '../../types/product.ts';
 import { LifecycleDialog, availableActions } from './LifecycleDialog.tsx';
 import { IndustryPacksDrawer } from './IndustryPacksDrawer.tsx';
+import { packOf } from '../../utils/productLifecycle.ts';
 import type { LifecycleAction } from './LifecycleDialog.tsx';
 
 interface ProductListProps {
@@ -33,8 +34,10 @@ export const ProductList: React.FC<ProductListProps> = ({
     duplicateProduct,
     bulkApproveProducts,
     currentUser,
-    showToast
+    showToast,
+    industryPacks
   } = useApp();
+  const [selectedPack, setSelectedPack] = useState('');
   const [lifecycle, setLifecycle] = useState<{ product: Product; action: LifecycleAction } | null>(null);
   const [packsOpen, setPacksOpen] = useState(false);
 
@@ -95,6 +98,7 @@ export const ProductList: React.FC<ProductListProps> = ({
 
   const handleClearFilters = () => {
     setLocalSearch('');
+    setSelectedPack('');
     setSelectedPortfolio('');
     setSelectedCategory('');
     setSelectedProductType('');
@@ -116,6 +120,9 @@ export const ProductList: React.FC<ProductListProps> = ({
         const matchesSku = p.variants.some((v) => v.sku.toLowerCase().includes(query) || v.gtin.toLowerCase().includes(query));
         if (!matchesName && !matchesCode && !matchesBrand && !matchesSku) return false;
       }
+
+      // Industry
+      if (selectedPack && packOf(p.productTypeId, productTypes) !== selectedPack) return false;
 
       // Portfolio
       if (selectedPortfolio && p.portfolioId !== selectedPortfolio) return false;
@@ -140,6 +147,8 @@ export const ProductList: React.FC<ProductListProps> = ({
   }, [
     products,
     effectiveSearch,
+    selectedPack,
+    productTypes,
     selectedPortfolio,
     selectedCategory,
     selectedProductType,
@@ -243,7 +252,7 @@ export const ProductList: React.FC<ProductListProps> = ({
                   <span className="vf-dropdown-icon">🧩</span>
                   <div>
                     <div className="vf-dropdown-title">Industry Packs</div>
-                    <div className="vf-dropdown-desc">Switch Medical Devices / FMCG / General on or off</div>
+                    <div className="vf-dropdown-desc">Medical, Agri, Automotive, Electronics, General</div>
                   </div>
                 </div>
                 <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('productTypes')}>
@@ -457,6 +466,19 @@ export const ProductList: React.FC<ProductListProps> = ({
               Clear Filters
             </button>
           </div>
+        </div>
+
+        {/* Industry chips */}
+        <div className="vf-saved-views" style={{ padding: '0 0 10px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--vf-slate-500)', textTransform: 'uppercase', marginRight: '4px' }}>Industry:</span>
+          {[{ id: '', name: 'All industries' }, ...industryPacks.filter((pk) => pk.enabled)].map((pk) => {
+            const n = pk.id ? products.filter((p) => packOf(p.productTypeId, productTypes) === pk.id).length : products.length;
+            return (
+              <button key={pk.id || 'all'} className={`vf-view-pill ${selectedPack === pk.id ? 'active' : ''}`} onClick={() => { setSelectedPack(pk.id); setCurrentPage(1); }}>
+                {pk.name} <span style={{ opacity: 0.6 }}>({n})</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Filter Grid */}

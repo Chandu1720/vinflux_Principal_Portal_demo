@@ -63,7 +63,10 @@ export interface ProductPricingReference {
   institutionalTenderCap: number;
   govPriceCapEnforced: boolean;
   govNpddCeiling?: number;
+  /** Minimum margin a reseller must keep on this product (%). */
   marginFloorPercent: number;
+  /** Standard / landed cost per unit (₹), used by the margin engine. */
+  standardCost?: number;
   priceListsLinked: string[];
 }
 
@@ -107,7 +110,7 @@ export interface ProductInventoryPolicy {
  * Industry packs: a product type belongs to one pack, and the pack decides which regulatory
  * section, defaults and validation rules apply. Packs are switched on/off in configuration.
  */
-export type IndustryPackId = 'medical-devices' | 'fmcg' | 'general';
+export type IndustryPackId = 'medical-devices' | 'agri' | 'automotive' | 'electronics' | 'general';
 
 export interface IndustryPack {
   id: IndustryPackId;
@@ -115,24 +118,35 @@ export interface IndustryPack {
   description: string;
   enabled: boolean;
   /** Regulatory section shown in the product form. */
-  regulatory: 'cdsco' | 'legal-metrology' | null;
+  /** cdsco = Medical Devices Rules form; schema = compliance fields from src/data/compliance.ts. */
+  regulatory: 'cdsco' | 'schema' | null;
   defaultTracking: 'Batch + Serial' | 'Batch / Lot' | 'Serial' | 'None';
   defaultHsn: string;
   defaultTax: string;
 }
 
-/** FMCG declarations (Legal Metrology (Packaged Commodities) Rules 2011, FSSAI for food). */
-export interface FmcgDetails {
-  netQuantity: number | null;
-  netQuantityUnit: 'g' | 'kg' | 'ml' | 'L' | 'pcs';
-  shelfLifeMonths: number | null;
-  countryOfOrigin: string;
-  consumerCare: string;
-  unitsPerCase: number | null;
-  isFood: boolean;
-  fssaiLicenceNo: string;
-  fssaiValidUntil: string;
-  foodMark: 'Veg' | 'Non-veg' | '';
+/** One industry-specific compliance field (registrations, licences, declarations). */
+export interface ComplianceField {
+  id: string;
+  label: string;
+  kind: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'bool';
+  options?: string[];
+  placeholder?: string;
+  hint?: string;
+  /** Only for these product types (empty = every type of the pack). */
+  types?: string[];
+  required?: boolean;
+  /** Required only when another field has one of these values. */
+  requiredWhen?: { field: string; in: string[] };
+  /** Shown only when another field has one of these values. */
+  showWhen?: { field: string; in: string[] };
+  pattern?: string;
+  patternHint?: string;
+  min?: number;
+  max?: number;
+  /** Date of a licence / registration: expired = blocking, near expiry = warning. */
+  expiry?: boolean;
+  group: string;
 }
 
 /** CDSCO (Medical Devices Rules 2017) registration of the product. */
@@ -202,8 +216,8 @@ export interface Product {
   approvedAt?: string | null;
   rejectionReason?: string | null;
   retireReason?: string | null;
-  /** FMCG pack declarations. */
-  fmcg?: FmcgDetails;
+  /** Industry compliance values (field id → value; booleans as "Yes"/"No"). */
+  compliance?: Record<string, string>;
   /** Names of the variant axes (e.g. ["Pack Size", "Flavour"]); size/thickness/side hold the values in order. */
   variantAxes?: string[];
 }
