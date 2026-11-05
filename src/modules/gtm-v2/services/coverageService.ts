@@ -3,6 +3,7 @@
  * INTEGRATION POINT: GET|POST /customer-assignments, POST /customer-assignments/:id/improvement,
  * POST /customer-assignments/:id/transfer (approval-gated).
  */
+import { tradeStatusOf } from '../utils/health';
 import type { CoverageTransfer, CustomerAssignment, GtmDatabase, HandoverChecklist } from '../types';
 import { mockCall, ServiceError } from './apiClient';
 import { mutateDb, nowISO, readDb } from './mockDb';
@@ -46,6 +47,11 @@ export const validateAssignment = (d: GtmDatabase, i: AssignInput): string[] => 
     const p = d.partners.find((x) => x.id === i.partnerId);
     if (!p) e.push('Choose the partner who will serve this hospital.');
     else if (p.status !== 'Active') e.push(`${p.name} is not active.`);
+    else {
+      // A partner that may not trade (expired licence, credit hold…) can't be given hospitals.
+      const ts = tradeStatusOf(p, d.config, d);
+      if (!ts.canTrade) e.push(`${p.name} can't trade right now: ${ts.reasons.filter((r) => r.tone === 'red').map((r) => r.text).join('; ')}.`);
+    }
   }
   if (!i.effectiveFrom) e.push('Effective date is required.');
   if (i.role === 'BACKUP' && !d.config.coverage.allowBackup) e.push('Backup suppliers are switched off in Configuration → Hospital Coverage.');

@@ -24,7 +24,7 @@ export const ComplianceCreditSection: React.FC<{ config: GtmConfiguration }> = (
       <RuleRow title="Alert before expiry" description={`Documents with expiry tracking: ${tracked.length ? tracked.join(', ') : 'none (turn it on in KYC Documents)'}.`}>
         <div style={{ width: 130 }}><NumberInput value={d.expiryAlertDays} min={1} onChange={(v) => set({ expiryAlertDays: v ?? 0 })} suffix="days" /></div>
       </RuleRow>
-      <SwitchRule title="Block trading when a licence has expired" description="Selling medical devices without a valid drug licence is not allowed — recommended on." checked={d.blockOnExpiredLicence} onChange={(v) => set({ blockOnExpiredLicence: v })} />
+      <SwitchRule title="Block trading when a licence has expired" description="Selling medical devices without a valid sale registration (MD-42) is not allowed — recommended on." checked={d.blockOnExpiredLicence} onChange={(v) => set({ blockOnExpiredLicence: v })} />
       <div className="g2-label" style={{ margin: '14px 0 6px' }}>Credit</div>
       <RuleRow title="Warn at credit utilisation" description="Outstanding as a share of the partner’s credit limit (from commercial terms).">
         <div style={{ width: 130 }}><NumberInput value={d.creditWarnPct} min={1} max={100} onChange={(v) => set({ creditWarnPct: v ?? 0 })} suffix="%" /></div>

@@ -8,6 +8,7 @@ import { importHistory, runImport } from '../import/history';
 import type { ImportContext, RowResult, RowValues } from '../import/types';
 import { emit } from '../events';
 import { loadJson, newId, saveJson } from '../store';
+import { workspaceKey } from '../workspace';
 
 export type ConnectorKind = 'ERP' | 'Tax / GST' | 'Logistics' | 'Messaging';
 
@@ -50,8 +51,8 @@ export interface SyncRun {
   status: 'Success' | 'Partial' | 'Failed' | 'No changes'; message: string; failures: SyncFailure[];
 }
 
-const SKEY = 'vinflux.connectors.v1';
-const RKEY = 'vinflux.syncRuns.v1';
+const SKEY = () => workspaceKey('vinflux.connectors.v1');
+const RKEY = () => workspaceKey('vinflux.syncRuns.v1');
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 export const subscribeConnectors = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
@@ -60,10 +61,10 @@ const DEFAULT_SAP: ConnectorSettings = {
   enabled: true, schedule: 'Manual', endpoint: 'https://sandbox.s4hana.example/sap/opu/odata', client: '100',
   plantMap: { WH01: 'WH-MEDC-06', WH02: 'WH-BHIW-01', WH03: 'WH-PEEN-04' }, lastSyncAt: null,
 };
-export const connectorSettings = (id: string): ConnectorSettings => loadJson<Record<string, ConnectorSettings>>(SKEY, {})[id] ?? { ...DEFAULT_SAP, enabled: id === 'sap', plantMap: id === 'sap' ? DEFAULT_SAP.plantMap : {} };
-export const saveSettings = (id: string, s: ConnectorSettings) => { const all = loadJson<Record<string, ConnectorSettings>>(SKEY, {}); all[id] = s; saveJson(SKEY, all); notify(); };
-export const syncRuns = (): SyncRun[] => loadJson<SyncRun[]>(RKEY, []);
-const saveRuns = (r: SyncRun[]) => { saveJson(RKEY, r.slice(0, 50)); notify(); };
+export const connectorSettings = (id: string): ConnectorSettings => loadJson<Record<string, ConnectorSettings>>(SKEY(), {})[id] ?? { ...DEFAULT_SAP, enabled: id === 'sap', plantMap: id === 'sap' ? DEFAULT_SAP.plantMap : {} };
+export const saveSettings = (id: string, s: ConnectorSettings) => { const all = loadJson<Record<string, ConnectorSettings>>(SKEY(), {}); all[id] = s; saveJson(SKEY(), all); notify(); };
+export const syncRuns = (): SyncRun[] => loadJson<SyncRun[]>(RKEY(), []);
+const saveRuns = (r: SyncRun[]) => { saveJson(RKEY(), r.slice(0, 50)); notify(); };
 
 /* --------------------- SAP sandbox: stock snapshot --------------------- */
 

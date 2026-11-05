@@ -39,7 +39,7 @@ const UserDrawer: React.FC<{ user: AppUser; onClose: () => void; readOnly: boole
   const isNew = !user.id;
   const set = <K extends keyof AppUser>(k: K, v: AppUser[K]) => setU((x) => ({ ...x, [k]: v }));
   const effective = matrixOf(u);
-  const allPrincipals = initialPrincipals.map((p) => ({ value: p.id, label: p.name, description: p.code }));
+  const allPrincipals = initialPrincipals.filter((p) => p.industry === u.workspace).map((p) => ({ value: p.id, label: p.name, description: p.code }));
   const self = u.id === currentUser.id;
   const save = () => {
     const e = saveUser(u, { id: currentUser.id, name: currentUser.name });
@@ -93,7 +93,8 @@ const RoleEditor: React.FC<{ role: Role; readOnly: boolean; onDone: () => void }
   const { currentUser, showToast } = useApp();
   const [r, setR] = useState<Role>(role);
   const [err, setErr] = useState<string | null>(null);
-  const users = listUsers().filter((u) => u.roleIds.includes(role.id));
+  const { workspace } = useApp();
+  const users = listUsers().filter((u) => u.workspace === workspace && u.roleIds.includes(role.id));
   const toggle = (res: typeof RESOURCES[number]['id'], a: PermAction, on: boolean) => setR((x) => {
     let list = new Set(x.matrix[res] ?? []);
     if (on) { list.add(a); list.add('view'); } else { list.delete(a); if (a === 'view') list = new Set(); }
@@ -146,7 +147,7 @@ const RoleEditor: React.FC<{ role: Role; readOnly: boolean; onDone: () => void }
 
 const UsersRolesPage: React.FC = () => {
   useSubscribe(subscribeUsers);
-  const { currentUser, signInAs, warehouses } = useApp();
+  const { currentUser, signInAs, warehouses, workspace } = useApp();
   const territories = useTerritories().data ?? [];
   const partners = usePartners().data ?? [];
   const [tab, setTab] = useState('users');
@@ -156,7 +157,8 @@ const UsersRolesPage: React.FC = () => {
   const [newRole, setNewRole] = useState<Role | null>(null);
   const canUsers = !!currentUser.permissions.canManageUsers;
   const canRoles = !!currentUser.permissions.canConfigurePlatform;
-  const users = listUsers();
+  // Each company (industry workspace) manages only its own users.
+  const users = listUsers().filter((u) => u.workspace === workspace);
   const roles = listRoles();
   const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
   const shown = users.filter((u) => [u.name, u.email, u.title, ...u.roleIds.map(roleName)].some((x) => x.toLowerCase().includes(q.toLowerCase())));
@@ -173,7 +175,7 @@ const UsersRolesPage: React.FC = () => {
   return (
     <div className="g2 g2-embed">
       <PageHeader title="Users & Roles" description="Who can sign in, what they can do (roles) and what they can see (scope). Approvals use these rights — a maker can’t approve their own work."
-        actions={tab === 'users' && canUsers && <Button variant="primary" icon={<Plus size={15} />} onClick={() => setEditing(blankUser())}>Add user</Button>} />
+        actions={tab === 'users' && canUsers && <Button variant="primary" icon={<Plus size={15} />} onClick={() => setEditing(blankUser(workspace))}>Add user</Button>} />
       <div className="g2-grid g2-grid-4" style={{ marginBottom: 16 }}>
         <KpiCard label="Active users" value={users.filter((u) => u.status === 'Active').length} icon={<Users size={22} />} color="#6d28d9" bg="#f5f3ff" foot={`${users.filter((u) => u.status !== 'Active').length} inactive`} />
         <KpiCard label="Roles" value={roles.filter((r) => r.kind === 'Staff').length} icon={<ShieldCheck size={22} />} color="#059669" bg="#ecfdf5" foot={`${roles.filter((r) => r.system).length} system`} />

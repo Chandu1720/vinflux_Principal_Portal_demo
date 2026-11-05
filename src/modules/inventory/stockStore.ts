@@ -5,6 +5,7 @@
  */
 import { emit } from '../../platform/events';
 import { loadJson, newId, saveJson } from '../../platform/store';
+import { workspaceKey } from '../../platform/workspace';
 
 export type StockStatus = 'Available' | 'Quarantine' | 'Blocked';
 export type MovementType = 'OPENING' | 'REVERSAL';
@@ -36,12 +37,12 @@ export interface StockBalance extends Omit<StockMovement, 'id' | 'type' | 'qty' 
   lastSource: string;
 }
 
-const KEY = 'vinflux.stock.v1';
+const KEY = () => workspaceKey('vinflux.stock.v1');
 const listeners = new Set<() => void>();
 let cache: StockMovement[] | null = null;
 
-export const movements = (): StockMovement[] => (cache ??= loadJson<StockMovement[]>(KEY, []));
-const commit = (list: StockMovement[]) => { cache = list; saveJson(KEY, list); listeners.forEach((l) => l()); };
+export const movements = (): StockMovement[] => (cache ??= loadJson<StockMovement[]>(KEY(), []));
+const commit = (list: StockMovement[]) => { cache = list; saveJson(KEY(), list); listeners.forEach((l) => l()); };
 export const subscribeStock = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 
 export const addOpening = (rows: Omit<StockMovement, 'id' | 'type' | 'at'>[], by: string, source: string) => {

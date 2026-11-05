@@ -12,7 +12,8 @@ import type {
   InventoryPolicyDefaults,
   Principal,
   CurrentUser,
-  IndustryPack
+  IndustryPack,
+  IndustryPackId
 } from '../types/product.ts';
 import type { Branch } from '../types/branch.ts';
 import type { Warehouse } from '../types/warehouse.ts';
@@ -28,6 +29,7 @@ import {
   initialUomPackagingDefaults,
   initialInventoryPolicyDefaults,
   initialPrincipals,
+  PORTFOLIO_INDUSTRY,
   initialCurrentUser,
   initialIndustryPacks
 } from '../data/productMasterData.ts';
@@ -45,8 +47,13 @@ export interface ToastMessage {
 interface AppContextType {
   // Current user & active principal
   currentUser: CurrentUser;
-  /** Sign in as another (active) user — demo stand-in for SSO. */
+  /** Sign in as another (active) user of the same workspace — demo stand-in for SSO. */
   signInAs: (userId: string) => void;
+  /** False until someone signs in on the login page. */
+  signedIn: boolean;
+  signOut: () => void;
+  /** Industry workspace of the signed-in user's company. */
+  workspace: IndustryPackId;
   principals: Principal[];
   activePrincipal: Principal;
   setActivePrincipal: (p: Principal) => void;
@@ -136,16 +143,19 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const deriveUser = (): CurrentUser => {
     const list = userStore.users();
-    const u = list.find((x) => x.id === userStore.currentUserId() && x.status === 'Active') ?? list.find((x) => x.status === 'Active');
-    return u ? userStore.toCurrentUser(u, initialCurrentUser.organization) : initialCurrentUser;
+    const u = list.find((x) => x.id === userStore.currentUserId() && x.status === 'Active');
+    return u ? userStore.toCurrentUser(u, initialCurrentUser.organization) : { ...initialCurrentUser, id: '' };
   };
   const [currentUser, setCurrentUser] = useState<CurrentUser>(deriveUser);
   useEffect(() => userStore.subscribeUsers(() => setCurrentUser(deriveUser())), []);
-  // Principal scope: a user limited to some principals only sees those.
+  const signedIn = !!currentUser.id;
+  const workspace: IndustryPackId = currentUser.workspace ?? 'medical-devices';
+  const wsPrincipals = initialPrincipals.filter((p) => p.industry === workspace);
+  // Principal scope: a user limited to some principals only sees those (always within the workspace).
   const scopeP = currentUser.scope?.principalIds ?? [];
-  const principals = scopeP.length ? initialPrincipals.filter((p) => scopeP.includes(p.id)) : initialPrincipals;
+  const principals = scopeP.length ? wsPrincipals.filter((p) => scopeP.includes(p.id)) : wsPrincipals;
   const [activePrincipalRaw, setActivePrincipal] = useState<Principal>(initialPrincipals[0]);
-  const activePrincipal = principals.some((p) => p.id === activePrincipalRaw.id) ? activePrincipalRaw : (principals[0] ?? initialPrincipals[0]);
+  const activePrincipal = principals.some((p) => p.id === activePrincipalRaw.id) ? activePrincipalRaw : (principals[0] ?? wsPrincipals[0] ?? initialPrincipals[0]);
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -340,12 +350,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signInAs = (userId: string) => {
     const u = userStore.users().find((x) => x.id === userId);
     if (!u || u.status !== 'Active') { showToast('That user is inactive.', 'warning'); return; }
+    if (u.workspace !== workspace) { showToast('That user belongs to another company — sign out and sign in with their account.', 'warning'); return; }
     userStore.setCurrent(userId);
     showToast(`Signed in as ${u.name} (${userStore.toCurrentUser(u, '').role}).`, 'info');
   };
-  /** Cycle through active users (quick maker / checker demo). */
+  const signOut = () => { userStore.logout(); window.location.assign('/'); };
+  /** Cycle through active users of the workspace (quick maker / checker demo). */
   const switchUser = () => {
-    const list = userStore.users().filter((u) => u.status === 'Active');
+    const list = userStore.users().filter((u) => u.status === 'Active' && u.workspace === workspace);
     const i = list.findIndex((u) => u.id === currentUser.id);
     signInAs(list[(i + 1) % list.length].id);
   };
@@ -513,18 +525,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  // The workspace sees only its own catalogue: its principals' products, its industry pack (+ general) and portfolios.
+  const wsPrincipalIds = new Set(wsPrincipals.map((p) => p.id));
+  const wsProducts = products.filter((p) => wsPrincipalIds.has(p.principalId));
+  const wsPacks = industryPacks.filter((p) => p.id === workspace || p.id === 'general');
+  const wsPortfolios = portfolios.filter((p) => (PORTFOLIO_INDUSTRY[p.id] ?? 'medical-devices') === workspace);
+
   return (
     <AppContext.Provider
       value={{
         currentUser,
         signInAs,
+        signedIn,
+        signOut,
+        workspace,
         principals,
         activePrincipal,
         setActivePrincipal,
         toasts,
         showToast,
         removeToast,
-        products,
+        products: wsProducts,
         selectedProductId,
         setSelectedProductId,
         addProduct,
@@ -538,9 +559,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         importProducts,
         revertProductImport,
         switchUser,
-        industryPacks,
+        industryPacks: wsPacks,
         setIndustryPackEnabled,
-        portfolios,
+        portfolios: wsPortfolios,
         productTypes,
         productTemplates,
         attributeTemplates,

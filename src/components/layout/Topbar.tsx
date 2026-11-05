@@ -31,6 +31,9 @@ export const Topbar: React.FC<TopbarProps> = ({
   } else if (location.pathname.startsWith('/integrations')) {
     pageTitle = 'Integration Hub';
     modeTag = 'Platform';
+  } else if (location.pathname.startsWith('/surgical')) {
+    pageTitle = 'Surgery Cases & Implants';
+    modeTag = 'Medical';
   } else if (location.pathname.startsWith('/pricing')) {
     pageTitle = 'Price Lists & Rate Contracts';
     modeTag = 'Commercial';

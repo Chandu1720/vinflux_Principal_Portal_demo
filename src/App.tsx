@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AppProvider, useApp } from './context/AppContext.tsx';
 import { PlatformProvider, usePlatform } from './platform/PlatformContext';
 import { ModuleOffPage } from './platform/pages/ModuleOffPage';
+import LoginPage from './platform/pages/LoginPage';
 import { Sidebar } from './components/layout/Sidebar.tsx';
 import { Topbar } from './components/layout/Topbar.tsx';
 import { ToastContainer } from './components/common/Toast.tsx';
@@ -16,6 +17,7 @@ const ModulesPage = lazy(() => import('./platform/pages/ModulesPage'));
 const DataImportPage = lazy(() => import('./platform/pages/DataImportPage'));
 const IntegrationHubPage = lazy(() => import('./platform/pages/IntegrationHubPage'));
 const StockOnHandPage = lazy(() => import('./modules/inventory/StockOnHandPage'));
+const SurgicalPage = lazy(() => import('./modules/surgical/SurgicalPage'));
 const PricingPage = lazy(() => import('./modules/pricing/PricingPage'));
 const UsersRolesPage = lazy(() => import('./modules/users/UsersRolesPage'));
 
@@ -69,6 +71,7 @@ const AppContent: React.FC = () => {
             <Route path="/modules" element={guard(<ModulesPage />)} />
             <Route path="/users" element={guard(<UsersRolesPage />)} />
             <Route path="/pricing" element={guard(<PricingPage />)} />
+            <Route path="/surgical" element={guard(<SurgicalPage />)} />
             <Route path="/data-import" element={guard(<DataImportPage />)} />
             <Route path="/integrations" element={guard(<IntegrationHubPage />)} />
 
@@ -88,12 +91,21 @@ const PlatformShell: React.FC = () => {
   return <PlatformProvider principalId={activePrincipal.id}><AppContent /></PlatformProvider>;
 };
 
+/** Nothing but the sign-in page until someone signs in; the account decides the industry workspace. */
+const SignInGate: React.FC = () => {
+  const { signedIn } = useApp();
+  if (!signedIn) return <LoginPage />;
+  return (
+    <BrowserRouter>
+      <PlatformShell />
+    </BrowserRouter>
+  );
+};
+
 export const App: React.FC = () => {
   return (
     <AppProvider>
-      <BrowserRouter>
-        <PlatformShell />
-      </BrowserRouter>
+      <SignInGate />
     </AppProvider>
   );
 };

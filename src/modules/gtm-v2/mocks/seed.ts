@@ -27,6 +27,10 @@ import { linksCompat } from '../utils/supply';
 export const SCHEMA_VERSION = 8; // v8: short-form partner types, hospital coverage
 
 const SYS = 'System Seed';
+/** Medical Devices Rules 2017 (as amended): sellers and stockists need a sale / distribution registration (application MD-41, certificate MD-42). */
+export const MD42_NAME = 'Medical Device Sale Registration (MD-42)';
+export const MD42_DESC = 'Registration to sell, stock or distribute medical devices — required for every reseller and stockist';
+
 const stamp = (d: string, by = SYS) => ({ createdAt: d, createdBy: by, updatedAt: d, updatedBy: by });
 
 /* ----------------------------- Territories ----------------------------- */
@@ -137,7 +141,7 @@ const partner = (p: Partial<Partner> & Pick<Partner, 'id' | 'name' | 'partnerTyp
     kycDocuments: verified || p.status === 'KYC Under Review' ? [
       { id: `doc-${pSeq}-1`, docTypeId: 'kyc-gst', fileName: 'GST_Certificate.pdf', fileSize: 245000, uploadedAt: date, status: verified ? 'Verified' : 'Under Review', remarks: '' },
       { id: `doc-${pSeq}-2`, docTypeId: 'kyc-pan', fileName: 'PAN_Card.pdf', fileSize: 120000, uploadedAt: date, status: verified ? 'Verified' : 'Under Review', remarks: '' },
-      { id: `doc-${pSeq}-3`, docTypeId: 'kyc-dl', fileName: 'Drug_License_20B_21B.pdf', fileSize: 380000, uploadedAt: date, status: verified ? 'Verified' : 'Under Review', remarks: '', documentNo: `20B-21B/${String(4100 + pSeq * 37)}/2024`, validUntil: '2028-03-31' },
+      { id: `doc-${pSeq}-3`, docTypeId: 'kyc-dl', fileName: 'MD42_Sale_Registration.pdf', fileSize: 380000, uploadedAt: date, status: verified ? 'Verified' : 'Under Review', remarks: '', documentNo: `MD-42/TS/${String(4100 + pSeq * 37)}/2024`, validUntil: '2028-03-31' },
     ] : [],
     submittedAt: p.status === 'Draft' ? null : date,
     activatedAt: p.status === 'Active' ? date : null,
@@ -278,7 +282,7 @@ const approvals: ApprovalRequest[] = [
   { id: 'apr-5', requestNo: 'REQ-0005', category: 'DISCOUNT_OVERRIDE', partnerId: 'ptr-dist-vja', entityType: 'TERM', entityId: 'term-3', summary: 'Discount override for Krishna Medi Distributors', details: [{ label: 'Discount %', from: '9', to: '11' }], requestedBy: 'Area Sales Manager', requestedAt: '2026-02-28T10:00:00Z', status: 'Approved', currentLevel: 2,
     steps: [{ level: 1, role: 'Regional Sales Head', status: 'Approved', actedBy: 'K. Raghav', actedAt: '2026-03-01T08:00:00Z', comments: 'OK' }, { level: 2, role: 'Finance Controller', status: 'Approved', actedBy: 'M. Iyer', actedAt: '2026-03-01T09:00:00Z', comments: 'Approved' }] },
   { id: 'apr-6', requestNo: 'REQ-0006', category: 'PARTNER_ONBOARDING', partnerId: 'ptr-dist-wgl', entityType: 'PARTNER', entityId: 'ptr-dist-wgl', summary: 'Onboard Kakatiya Pharma Links as Distributor', details: [{ label: 'Territories', to: 'Warangal' }], requestedBy: 'Area Sales Manager', requestedAt: '2026-09-14T10:00:00Z', status: 'Rejected', currentLevel: 1,
-    steps: [{ level: 1, role: 'Regional Sales Head', status: 'Rejected', actedBy: 'K. Raghav', actedAt: '2026-09-15T10:00:00Z', comments: 'Drug licence expired' }, { level: 2, role: 'Commercial Head', status: 'Waiting', actedBy: null, actedAt: null, comments: '' }] },
+    steps: [{ level: 1, role: 'Regional Sales Head', status: 'Rejected', actedBy: 'K. Raghav', actedAt: '2026-09-15T10:00:00Z', comments: 'MD-42 sale registration expired' }, { level: 2, role: 'Commercial Head', status: 'Waiting', actedBy: null, actedAt: null, comments: '' }] },
 ];
 
 /* ---------------------------- Configuration ----------------------------- */
@@ -294,7 +298,8 @@ const config: GtmConfiguration = {
   kycDocuments: [
     { id: 'kyc-gst', name: 'GST Certificate', description: 'GST registration certificate', mandatoryForPartnerTypeIds: ['pt-cnf', 'pt-ss', 'pt-dist', 'pt-dealer', 'pt-retail', 'pt-hosp'], allowedFormats: ['pdf', 'jpg', 'png'], maxSizeMb: 5, status: 'Active' },
     { id: 'kyc-pan', name: 'PAN Card', description: 'Business PAN', mandatoryForPartnerTypeIds: ['pt-cnf', 'pt-ss', 'pt-dist', 'pt-dealer', 'pt-retail', 'pt-hosp'], allowedFormats: ['pdf', 'jpg', 'png'], maxSizeMb: 5, status: 'Active' },
-    { id: 'kyc-dl', name: 'Drug License (20B/21B)', description: 'Wholesale drug licence', mandatoryForPartnerTypeIds: ['pt-cnf', 'pt-ss', 'pt-dist', 'pt-dealer'], allowedFormats: ['pdf'], maxSizeMb: 10, status: 'Active', tracksExpiry: true },
+    { id: 'kyc-dl', name: MD42_NAME, description: MD42_DESC, mandatoryForPartnerTypeIds: ['pt-cnf', 'pt-ss', 'pt-dist', 'pt-dealer', 'pt-retail'], allowedFormats: ['pdf'], maxSizeMb: 10, status: 'Active', tracksExpiry: true },
+    { id: 'kyc-cea', name: 'Clinical Establishment Registration', description: 'Hospital registration under the Clinical Establishments Act / state Nursing Home Act', mandatoryForPartnerTypeIds: [], allowedFormats: ['pdf', 'jpg', 'png'], maxSizeMb: 10, status: 'Active', tracksExpiry: true },
     { id: 'kyc-bank', name: 'Cancelled Cheque', description: 'Bank account proof', mandatoryForPartnerTypeIds: [], allowedFormats: ['pdf', 'jpg', 'png'], maxSizeMb: 5, status: 'Active' },
     { id: 'kyc-agreement', name: 'Signed Distribution Agreement', description: 'Executed agreement', mandatoryForPartnerTypeIds: ['pt-cnf'], allowedFormats: ['pdf'], maxSizeMb: 15, status: 'Active' },
   ],
@@ -342,6 +347,23 @@ const config: GtmConfiguration = {
     { key: 'Active', label: 'Active', tone: 'green', description: 'Trading partner' },
     { key: 'Suspended', label: 'Suspended', tone: 'red', description: 'Temporarily blocked from trading' },
     { key: 'Rejected', label: 'Rejected', tone: 'red', description: 'Onboarding rejected' },
+  ],
+};
+
+
+/** Partner licences other industries need instead of the medical ones. */
+export const INDUSTRY_KYC: Record<string, { id: string; name: string; description: string; types: string[] }[]> = {
+  agri: [
+    { id: 'kyc-ins', name: 'Insecticide Selling Licence', description: 'Licence to sell insecticides (Insecticides Rules 1971), state agriculture department', types: ['pt-ss', 'pt-dist', 'pt-dealer', 'pt-retail'] },
+    { id: 'kyc-seed', name: 'Seed Dealer Licence', description: 'Licence to sell seeds (Seeds Control Order 1983)', types: ['pt-ss', 'pt-dist', 'pt-dealer', 'pt-retail'] },
+    { id: 'kyc-fert', name: 'Fertiliser Dealer Registration', description: 'Authorisation to sell fertiliser (Fertiliser Control Order 1985)', types: ['pt-dist', 'pt-dealer', 'pt-retail'] },
+  ],
+  automotive: [
+    { id: 'kyc-trade', name: 'Trade / Shops & Establishment Licence', description: 'Municipal trade licence of the outlet', types: [] },
+  ],
+  electronics: [
+    { id: 'kyc-trade', name: 'Trade / Shops & Establishment Licence', description: 'Municipal trade licence of the outlet', types: [] },
+    { id: 'kyc-epr-pro', name: 'E-waste Collection Tie-up', description: 'Take-back / collection arrangement with an authorised recycler (E-Waste Rules 2022)', types: ['pt-dist'] },
   ],
 };
 

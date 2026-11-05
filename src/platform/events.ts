@@ -12,7 +12,8 @@ export type PlatformEventType =
   | 'import.completed' | 'import.undone'
   | 'connector.synced' | 'connector.failed'
   | 'user.changed' | 'role.changed'
-  | 'price.submitted' | 'price.activated' | 'price.rejected';
+  | 'price.submitted' | 'price.activated' | 'price.rejected'
+  | 'implant.recorded' | 'case.closed';
 
 export interface PlatformEvent {
   id: string;

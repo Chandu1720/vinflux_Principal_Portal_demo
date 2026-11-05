@@ -7,6 +7,8 @@ import { useChannels, useConfig, usePartners, useTerms, useTerritories } from '.
 import { resolveTerms } from '../gtm-v2/utils/commercial';
 import { partnerChannelId } from '../gtm-v2/utils/eligibility';
 import { getAncestorIds } from '../gtm-v2/utils/territory';
+import { tradeStatusOf } from '../gtm-v2/utils/health';
+import { Alert } from '../../platform/ui';
 import { quote, subscribePricing, today } from './pricingStore';
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -21,6 +23,7 @@ export const PriceCheckTab: React.FC = () => {
   const terms = useTerms().data ?? [];
   const config = useConfig().data;
   const [partnerId, setPartnerId] = useState<string>('ptr-hosp-hyd');
+  // (default customer exists only in the medical demo; other workspaces pick one)
   const [productId, setProductId] = useState<string>('PRD-EVOCON-001');
   const [qty, setQty] = useState<number>(12);
   const [on, setOn] = useState(today());
@@ -49,6 +52,10 @@ export const PriceCheckTab: React.FC = () => {
           <Field label="Order date"><Input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
         </FormGrid>
       </FormGrid>
+      {partner && config && (() => {
+        const ts = tradeStatusOf(partner, config, { channels, terms, territories });
+        return !ts.canTrade ? <Alert tone="error">{partner.name} can’t trade: {ts.reasons.filter((r) => r.tone === 'red' || r.tone === 'slate').map((r) => r.text).join('; ')}. Orders will be blocked until this is fixed.</Alert> : null;
+      })()}
       {result && (
         <div className="g2-grid g2-grid-2" style={{ alignItems: 'start' }}>
           <div className="g2-card" style={{ padding: 16 }}>

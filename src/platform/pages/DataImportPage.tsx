@@ -38,7 +38,7 @@ const sampleTable = (e: ImportEntity, ctx: ReturnType<typeof useImportContext>):
   return [
     ['Item Code', 'Item Name', 'Item Group', 'Division', 'Brand', 'HSN', 'GST', 'UOM', 'MRP', 'EAN', 'SAP Code'],
     ['TIB-INS-PE-03', 'Tibial Insert Polyethylene Size 3', 'Implantable Medical Device', 'Arthroplasty — Joint Replacement', 'Genius', '90213100', '5', 'Each', '24500', '', 'MAT-SAP-100231'],
-    ['VBP-HY-3302', 'Velocity Ceramic Rear Brake Pad Set — Creta', 'Automotive Spare Part', 'Automotive Aftermarket', 'Velocity', '87083000', '18', 'Set', '1650', '', 'MAT-SAP-100232'],
+    ['BC-HV-40G', 'Bone Cement High Viscosity 40 g', 'Single-Use Consumable', 'Hospital Consumables & Bio-Materials', 'Biorad', '30064000', '12', 'Each', '3850', '', 'MAT-SAP-100232'],
     ['SCR-CORT-35-20', 'Cortical Screw 3.5 x 20 mm', 'Implantable Medical Device', 'Trauma & Extremities', 'Genius', '90211000', '5', 'Each', '1850', '8901234999990', 'MAT-SAP-100233'],
     [existing?.code ?? 'X', existing?.name ?? 'X', '', '', '', '', '', '', String((existing?.pricingReference?.mrp ?? 1000) + 500), '', ''],
     ['DRP-SURG-01', 'Surgical Drape Large', 'Disposable Drape', 'Hospital Consumables & Bio-Materials', 'Biorad', '6307', '12', 'Each', '420', '', ''],

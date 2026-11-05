@@ -2,11 +2,12 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext.tsx';
 import { usePlatform } from '../../platform/PlatformContext';
+import { WORKSPACE_LABEL } from '../../platform/workspace';
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { activePrincipal, principals, setActivePrincipal, currentUser, showToast, switchUser } = useApp();
+  const { activePrincipal, principals, setActivePrincipal, currentUser, showToast, switchUser, workspace, signOut } = useApp();
 
   const isProducts = location.pathname === '/' || location.pathname.startsWith('/products');
   const isBranches = location.pathname.startsWith('/branches');
@@ -40,7 +41,7 @@ export const Sidebar: React.FC = () => {
             VinFlux <span className="vf-brand-badge">2.0</span>
           </div>
         </div>
-        <span style={{ fontSize: '11px', color: '#94a3b8' }}>ERP Core</span>
+        <span style={{ fontSize: '10.5px', color: '#c4b5fd', fontWeight: 600, textAlign: 'right', lineHeight: 1.2 }} title="Industry workspace of your company">{WORKSPACE_LABEL[workspace]}</span>
       </div>
 
       {/* Active Principal Context */}
@@ -112,6 +113,12 @@ export const Sidebar: React.FC = () => {
           </button>
         </div>}
 
+        {/* Medical: surgery cases, sets, implants */}
+        {enabled('surgical') && <div className="vf-nav-section">
+          <div className="vf-nav-heading">Surgery & Implants</div>
+          {nav('/surgical', 'Cases, Sets & Implants', ic('M9 2h6v4H9zM4 6h16v14H4zM12 10v6M9 13h6'))}
+        </div>}
+
         {/* Commercial */}
         {enabled('price-lists') && <div className="vf-nav-section">
           <div className="vf-nav-heading">Commercial</div>
@@ -170,7 +177,8 @@ export const Sidebar: React.FC = () => {
             <div style={{ marginTop: '2px' }}>
               <span className="vf-badge" onClick={() => navigate('/users')} style={{ cursor: 'pointer', fontSize: '9.5px', padding: '1px 6px', display: 'inline-block' }} title="Users & Roles — sign in as another user">
                 {currentUser.scope && (currentUser.scope.territoryIds.length || currentUser.scope.warehouseIds.length) ? 'Scoped · switch user ▾' : 'Switch user ▾'}
-              </span>
+              </span>{' '}
+              <span className="vf-badge" onClick={signOut} style={{ cursor: 'pointer', fontSize: '9.5px', padding: '1px 6px', display: 'inline-block' }} title="Sign out">Sign out</span>
             </div>
           </div>
         </div>

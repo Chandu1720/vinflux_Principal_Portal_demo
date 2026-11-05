@@ -5,6 +5,8 @@ import '../styles/gtm-v2.css';
 import { NAV_SECTIONS, PAGE_TITLES, ROUTES } from '../constants/navigation';
 import { useApprovals, useChannels, useFlows, usePartners, useTerritories } from '../hooks/useGtmData';
 import { useGtmAuth } from '../hooks/useGtmAuth';
+import { useApp } from '../../../context/AppContext.tsx';
+import { WORKSPACE_LABEL } from '../../../platform/workspace';
 import { ToastContainer } from '../../../components/common/Toast.tsx';
 import { IconButton } from '../components/ui';
 import { ConfirmDialog } from '../components/ui/Modal';
@@ -58,6 +60,7 @@ export const GtmV2Layout: React.FC = () => {
   const { user, principal, can } = useGtmAuth();
   const approvals = useApprovals().data ?? [];
   const pending = approvals.filter((a) => a.status === 'Pending').length;
+  const { workspace } = useApp();
   const [navOpen, setNavOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
 
@@ -72,14 +75,14 @@ export const GtmV2Layout: React.FC = () => {
           <div className="g2-brand-logo">V</div>
           <div>
             <div className="g2-brand-name">VinFlux</div>
-            <div className="g2-brand-sub">Go-to-Market</div>
+            <div className="g2-brand-sub">Go-to-Market · {WORKSPACE_LABEL[workspace]}</div>
           </div>
         </div>
         <nav className="g2-nav">
           {NAV_SECTIONS.map((sec) => (
             <React.Fragment key={sec.heading}>
               <div className="g2-nav-heading">{sec.heading}</div>
-              {sec.items.map((item) => (
+              {sec.items.filter((item) => item.path !== ROUTES.coverage || workspace === 'medical-devices').map((item) => (
                 <NavLink key={item.path} to={item.path} className={({ isActive }) => `g2-nav-item ${isActive ? 'active' : ''}`}>
                   <item.icon size={17} />
                   <span>{item.label}</span>

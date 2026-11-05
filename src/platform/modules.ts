@@ -3,9 +3,11 @@
  * A module can be switched on/off per principal; dependencies must be on first.
  * Modules marked 'planned' are on the roadmap and can't be enabled yet.
  */
+import type { IndustryPackId } from '../types/product.ts';
+
 export type ModuleId =
   | 'product-master' | 'go-to-market' | 'integration-hub' | 'inventory'
-  | 'price-lists' | 'qc' | 'orders' | 'logistics' | 'returns' | 'recall' | 'performance' | 'users';
+  | 'price-lists' | 'qc' | 'orders' | 'logistics' | 'returns' | 'recall' | 'performance' | 'users' | 'surgical';
 
 export interface ModuleManifest {
   id: ModuleId;
@@ -21,6 +23,8 @@ export interface ModuleManifest {
   paths: string[];
   publishes: string[];
   subscribes: string[];
+  /** Only offered to these industry workspaces (empty / missing = all). */
+  industries?: IndustryPackId[];
 }
 
 export const MODULES: ModuleManifest[] = [
@@ -30,6 +34,7 @@ export const MODULES: ModuleManifest[] = [
   { id: 'inventory', name: 'Inventory', description: 'Stock by warehouse, bin, batch, serial and expiry, kept as a ledger of movements. Opening stock via import or ERP sync.', version: '0.5', status: 'available', phase: 2, dependsOn: ['product-master'], paths: ['/inventory'], publishes: ['stock.received', 'stock.reversed'], subscribes: [] },
   { id: 'users', name: 'Users & Roles', description: 'Staff and partner users, roles, permission matrix, data scope by principal, territory and warehouse.', version: '1.0', core: true, status: 'available', dependsOn: [], paths: ['/users'], publishes: ['user.changed', 'role.changed'], subscribes: [] },
   { id: 'price-lists', name: 'Price Lists & Rate Contracts', description: 'Channel and partner price lists, hospital rate contracts, schemes; MRP / NPPA / floor-price checks, maker-checker and versions.', version: '1.0', status: 'available', phase: 1, dependsOn: ['product-master', 'go-to-market'], paths: ['/pricing'], publishes: ['price.submitted', 'price.activated', 'price.rejected'], subscribes: [] },
+  { id: 'surgical', name: 'Surgery Cases & Implants', description: 'Case booking with loaner / consignment instrument sets, usage after surgery, implant register with UDI per patient, kit return check, sterilisation, recall trace.', version: '1.0', status: 'available', dependsOn: ['product-master', 'go-to-market'], paths: ['/surgical'], publishes: ['implant.recorded', 'case.closed'], subscribes: [], industries: ['medical-devices'] },
   { id: 'qc', name: 'Quality Control', description: 'Inbound and returns QC, inspection checklists per product type, batch release, deviations.', version: '—', status: 'planned', phase: 2, dependsOn: ['inventory'], paths: [], publishes: [], subscribes: [] },
   { id: 'orders', name: 'Order Management', description: 'Partner orders with trade/credit/price/stock checks, PO routing, allocation, surgery case orders.', version: '—', status: 'planned', phase: 3, dependsOn: ['inventory', 'price-lists', 'go-to-market'], paths: [], publishes: [], subscribes: [] },
   { id: 'logistics', name: 'Logistics & Shipments', description: 'Packing with batch/serial scan, transporters, e-way bill, tracking, proof of delivery, kit shipments.', version: '—', status: 'planned', phase: 3, dependsOn: ['orders'], paths: [], publishes: [], subscribes: [] },
