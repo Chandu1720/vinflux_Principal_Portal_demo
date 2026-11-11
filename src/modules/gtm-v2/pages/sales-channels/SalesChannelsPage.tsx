@@ -38,12 +38,10 @@ const SalesChannelsPage: React.FC = () => {
     { key: 'trade', header: 'Trades as', sortValue: (c) => c.tradeModel ?? 'RESELL', render: (c) => ((c.tradeModel ?? 'RESELL') === 'AGENT' ? <Badge tone="amber" title="Dispatches company stock — POs go to the company">Agent</Badge> : <Badge tone="blue" title="Buys and resells — receives POs">Buys &amp; resells</Badge>) },
     { key: 'end', header: 'Role', sortValue: (c) => (c.canBeEndpoint ? 1 : 0), render: (c) => (c.canBeEndpoint ? <Badge tone="green"><Building2 size={11} />End customer</Badge> : <Badge tone="slate">Intermediate</Badge>) },
     { key: 'disc', header: 'Discount', align: 'right', sortValue: (c) => c.terms.standardDiscountPct, render: (c) => `${c.terms.standardDiscountPct}%` },
-    { key: 'cp', header: 'Credit period', align: 'right', sortValue: (c) => c.terms.creditPeriodDays, render: (c) => `${c.terms.creditPeriodDays} d` },
-    { key: 'cl', header: 'Credit limit', align: 'right', sortValue: (c) => c.terms.creditLimit, render: (c) => formatCompactINR(c.terms.creditLimit) },
+    { key: 'cl', header: 'Credit', align: 'right', sortValue: (c) => c.terms.creditLimit, render: (c) => <div><div>{formatCompactINR(c.terms.creditLimit)}</div><div className="g2-cell-sub">{c.terms.creditPeriodDays} days</div></div> },
     { key: 'dep', header: 'Deposit', align: 'right', sortValue: (c) => c.terms.depositAmount, render: (c) => (c.terms.depositRequired ? formatCompactINR(c.terms.depositAmount) : <span className="g2-muted">—</span>) },
-    { key: 'usage', header: 'Usage', render: (c) => <span className="g2-small">{flows.filter((f) => f.stages.some((s) => s.channelId === c.id)).length} flows · {partnerCount(c.id)} partners</span> },
-    { key: 'ver', header: 'Version', sortValue: (c) => c.version, render: (c) => <Badge tone="purple">v{c.version}</Badge> },
-    { key: 'status', header: 'Status', sortValue: (c) => c.status, render: (c) => <StatusBadge status={c.status} /> },
+    { key: 'usage', header: 'Usage', render: (c) => <span className="g2-small" style={{ whiteSpace: 'nowrap' }}>{flows.filter((f) => f.stages.some((s) => s.channelId === c.id)).length} flows · {partnerCount(c.id)} partners</span> },
+    { key: 'status', header: 'Status', sortValue: (c) => c.status, render: (c) => <span className="g2-row" style={{ gap: 4, flexWrap: 'nowrap' }}><StatusBadge status={c.status} /><Badge tone="purple" title="Configuration version">v{c.version}</Badge></span> },
     {
       key: 'actions', header: '', className: 'actions', render: (c) => (
         <span onClick={(e) => e.stopPropagation()}>

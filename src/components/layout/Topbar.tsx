@@ -22,8 +22,20 @@ export const Topbar: React.FC<TopbarProps> = ({
   if (location.pathname.startsWith('/branches')) {
     pageTitle = 'Branch Master';
     modeTag = 'Corporate Supply Infrastructure';
+  } else if (location.pathname.startsWith('/orders')) {
+    pageTitle = 'Orders';
+    modeTag = 'Order Management';
+  } else if (location.pathname.startsWith('/recall')) {
+    pageTitle = 'Complaints & Recall';
+    modeTag = 'Vigilance';
+  } else if (location.pathname.startsWith('/returns')) {
+    pageTitle = 'Returns';
+    modeTag = 'Returns & Credit Notes';
+  } else if (location.pathname.startsWith('/logistics')) {
+    pageTitle = 'Logistics';
+    modeTag = 'Dispatch & Delivery';
   } else if (location.pathname.startsWith('/inventory')) {
-    pageTitle = 'Stock on Hand';
+    pageTitle = 'Inventory';
     modeTag = 'Inventory Ledger';
   } else if (location.pathname.startsWith('/data-import')) {
     pageTitle = 'Data Import';

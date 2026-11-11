@@ -335,7 +335,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const importProducts = (created: Product[], updates: { id: string; patch: Partial<Product> }[]) => {
-    setProducts((prev) => [...created, ...prev.map((p) => {
+    // Imported products belong to the principal the user is working in.
+    setProducts((prev) => [...created.map((c) => (c.principalId ? c : { ...c, principalId: activePrincipal.id })), ...prev.map((p) => {
       const u = updates.find((x) => x.id === p.id);
       return u ? { ...p, ...u.patch, updatedAt: todayISO(), updatedBy: currentUser.name } : p;
     })]);

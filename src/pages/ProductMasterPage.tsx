@@ -11,6 +11,7 @@ import { BarcodeLabelModal } from '../components/common/BarcodeLabel.tsx';
 import { ImportModal } from '../components/product/ImportModal.tsx';
 import { ExportModal } from '../components/product/ExportModal.tsx';
 import { QuickConfigModal } from '../components/product/QuickConfigModal.tsx';
+import { ProductErpImportDrawer } from '../platform/integrations/ErpImport';
 
 interface ProductMasterPageProps {
   searchTerm?: string;
@@ -30,6 +31,7 @@ export const ProductMasterPage: React.FC<ProductMasterPageProps> = ({ searchTerm
   // Modals state
   const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [erpOpen, setErpOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [quickConfigTarget, setQuickConfigTarget] = useState<string | null>(null);
 
@@ -65,6 +67,7 @@ export const ProductMasterPage: React.FC<ProductMasterPageProps> = ({ searchTerm
           onOpenConfigStudio={handleOpenConfigStudio}
           onPrintLabel={(p) => setBarcodeProduct(p)}
           onOpenImport={() => setImportOpen(true)}
+          onOpenErpImport={() => (canEdit ? setErpOpen(true) : denied())}
           onOpenExport={() => setExportOpen(true)}
           searchTerm={searchTerm}
         />
@@ -102,6 +105,7 @@ export const ProductMasterPage: React.FC<ProductMasterPageProps> = ({ searchTerm
         />
       )}
 
+      {erpOpen && <div className="g2 g2-embed" style={{ display: 'contents' }}><ProductErpImportDrawer onClose={() => setErpOpen(false)} /></div>}
       <ImportModal
         isOpen={importOpen}
         onClose={() => setImportOpen(false)}

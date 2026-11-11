@@ -1,4 +1,6 @@
-import React, { lazy, Suspense, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useImportContext } from './platform/import/useImportContext';
+import { runDueSyncs } from './platform/integrations/stockSync';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext.tsx';
 import { PlatformProvider, usePlatform } from './platform/PlatformContext';
@@ -17,6 +19,10 @@ const ModulesPage = lazy(() => import('./platform/pages/ModulesPage'));
 const DataImportPage = lazy(() => import('./platform/pages/DataImportPage'));
 const IntegrationHubPage = lazy(() => import('./platform/pages/IntegrationHubPage'));
 const StockOnHandPage = lazy(() => import('./modules/inventory/StockOnHandPage'));
+const OrdersPage = lazy(() => import('./modules/orders/OrdersPage'));
+const LogisticsPage = lazy(() => import('./modules/logistics/LogisticsPage'));
+const ReturnsPage = lazy(() => import('./modules/returns/ReturnsPage'));
+const RecallPage = lazy(() => import('./modules/recall/RecallPage'));
 const SurgicalPage = lazy(() => import('./modules/surgical/SurgicalPage'));
 const PricingPage = lazy(() => import('./modules/pricing/PricingPage'));
 const UsersRolesPage = lazy(() => import('./modules/users/UsersRolesPage'));
@@ -72,6 +78,10 @@ const AppContent: React.FC = () => {
             <Route path="/users" element={guard(<UsersRolesPage />)} />
             <Route path="/pricing" element={guard(<PricingPage />)} />
             <Route path="/surgical" element={guard(<SurgicalPage />)} />
+            <Route path="/orders" element={guard(<OrdersPage />)} />
+            <Route path="/logistics" element={guard(<LogisticsPage />)} />
+            <Route path="/returns" element={guard(<ReturnsPage />)} />
+            <Route path="/recall" element={guard(<RecallPage />)} />
             <Route path="/data-import" element={guard(<DataImportPage />)} />
             <Route path="/integrations" element={guard(<IntegrationHubPage />)} />
 
@@ -85,10 +95,26 @@ const AppContent: React.FC = () => {
   );
 };
 
+/** Runs ERP connectors whose schedule is due (checked every minute while the app is open; a server job in production). */
+const SyncScheduler: React.FC = () => {
+  const ctx = useImportContext();
+  const { showToast } = useApp();
+  const ref = useRef(ctx);
+  ref.current = ctx;
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const tell = (r: { status: string; message: string }) => { if (r.status !== 'No changes') showToast(`Scheduled ERP sync: ${r.message}`, r.status === 'Failed' ? 'danger' : 'info'); };
+      runDueSyncs(ref.current, tell).forEach(tell);
+    }, 60000);
+    return () => window.clearInterval(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+};
+
 /** Modules are switched on/off per active principal. */
 const PlatformShell: React.FC = () => {
   const { activePrincipal } = useApp();
-  return <PlatformProvider principalId={activePrincipal.id}><AppContent /></PlatformProvider>;
+  return <PlatformProvider principalId={activePrincipal.id}><SyncScheduler /><AppContent /></PlatformProvider>;
 };
 
 /** Nothing but the sign-in page until someone signs in; the account decides the industry workspace. */

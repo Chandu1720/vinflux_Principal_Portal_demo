@@ -3,12 +3,13 @@
  * Every connector reuses the import pipeline (same checks, history and undo as file imports).
  * Only the SAP connector runs in sandbox mode in the demo; real connectors call the ERP / service API.
  */
-import { ENTITIES, rowsFromTable, autoMatch } from '../import/entities';
-import { importHistory, runImport } from '../import/history';
-import type { ImportContext, RowResult, RowValues } from '../import/types';
+import { ENTITIES } from '../import/entities';
+import { runImport } from '../import/history';
+import type { ImportContext, RowValues } from '../import/types';
 import { emit } from '../events';
-import { loadJson, newId, saveJson } from '../store';
+import { loadJson, saveJson } from '../store';
 import { workspaceKey } from '../workspace';
+import { ERP_PROFILES, erpProfile } from './erpProfiles';
 
 export type ConnectorKind = 'ERP' | 'Tax / GST' | 'Logistics' | 'Messaging';
 
@@ -23,13 +24,15 @@ export interface ConnectorDef {
   availability: 'sandbox' | 'built-in' | 'planned';
 }
 
+/** Priority order: SAP, Oracle, Odoo, Zoho, Microsoft, then the rest. */
+const ERP_ORDER = ['sap', 'sap-b1', 'oracle-fusion', 'netsuite', 'odoo', 'zoho', 'd365-bc', 'd365-fo', 'tally', 'erpnext', 'marg', 'busy'];
 export const CONNECTORS: ConnectorDef[] = [
-  { id: 'sap', name: 'SAP S/4HANA', kind: 'ERP', description: 'Material master and stock by plant / storage location / batch / serial (MB52-style snapshot).', entities: ['Opening stock', 'Products'], direction: 'Both', availability: 'sandbox' },
+  ...[...ERP_PROFILES].sort((x, y) => ERP_ORDER.indexOf(x.id) - ERP_ORDER.indexOf(y.id)).map((p): ConnectorDef => ({
+    id: p.id, name: p.name, kind: 'ERP', description: `${p.fit}. ${p.api}; ${p.access === 'agent' ? 'on-premise agent' : 'cloud / network API'}. Stock, products, partners, sales orders and invoices.`,
+    entities: p.objects.map((o) => o.vinflux), direction: 'Both', availability: p.status,
+  })),
+  { id: 'sftp', name: 'File drop (SFTP / shared folder)', kind: 'ERP', description: 'Any other ERP that can export a stock report: VinFlux picks up the CSV / Excel from a folder on a schedule.', entities: ['Stock'], direction: 'Inbound', availability: 'planned' },
   { id: 'gsp', name: 'GST (GSTN via GSP)', kind: 'Tax / GST', description: 'GSTIN verification in partner onboarding. E-invoice and e-way bill in the Orders phase.', entities: ['GSTIN verification'], direction: 'Outbound', availability: 'built-in' },
-  { id: 'tally', name: 'Tally Prime', kind: 'ERP', description: 'Stock items, godown balances and ledgers via Tally XML / ODBC.', entities: ['Products', 'Opening stock'], direction: 'Both', availability: 'planned' },
-  { id: 'zoho', name: 'Zoho Books / Inventory', kind: 'ERP', description: 'Items, warehouses and stock adjustments via REST API.', entities: ['Products', 'Opening stock'], direction: 'Both', availability: 'planned' },
-  { id: 'netsuite', name: 'Oracle NetSuite', kind: 'ERP', description: 'Items, locations and inventory numbers via SuiteTalk REST.', entities: ['Products', 'Opening stock'], direction: 'Both', availability: 'planned' },
-  { id: 'dynamics', name: 'Microsoft Dynamics 365', kind: 'ERP', description: 'Released products and on-hand inventory via OData.', entities: ['Products', 'Opening stock'], direction: 'Both', availability: 'planned' },
   { id: 'shiprocket', name: 'Courier aggregator (Shiprocket / Delhivery)', kind: 'Logistics', description: 'AWB creation, pickup, live tracking and proof of delivery.', entities: ['Shipments'], direction: 'Both', availability: 'planned' },
   { id: 'whatsapp', name: 'WhatsApp / SMS / Email', kind: 'Messaging', description: 'Order, shipment, credit and recall notifications to partners.', entities: ['Notifications'], direction: 'Outbound', availability: 'planned' },
 ];
@@ -42,13 +45,34 @@ export interface ConnectorSettings {
   /** SAP plant → VinFlux warehouse code. */
   plantMap: Record<string, string>;
   lastSyncAt: string | null;
+  /** Auto = apply ERP changes at once; Review = changes wait in Inventory → Reconciliation. */
+  applyMode?: 'Auto' | 'Review';
+  /** On-premise agent (Tally). */
+  agentKey?: string;
+  agentStatus?: 'Not installed' | 'Online' | 'Offline';
+  agentHeartbeatAt?: string | null;
+  sourceCompany?: string;
+  /** Sandbox = demo data; Live = the real ERP through the VinFlux integration service. */
+  mode?: 'Sandbox' | 'Live';
+  /** '/api/erp' (Vercel function) or the integration service URL (…/api/erp). */
+  serviceUrl?: string;
+  /** VinFlux partner id → customer code / id in this ERP (for sales orders). */
+  customerMap?: Record<string, string>;
+  lastTest?: { at: string; ok: boolean; message: string; locations?: string[] } | null;
 }
 
 export interface SyncFailure { row: number; values: RowValues; errors: string[]; resolved: boolean }
+export interface StockChange {
+  warehouseId: string; productId: string; variantSku: string | null; batch: string; serial: string | null; status: 'Available' | 'Quarantine' | 'Blocked';
+  mfgDate: string | null; expiryDate: string | null; unitCost: number | null; vinflux: number; erp: number;
+}
 export interface SyncRun {
   id: string; connectorId: string; entity: string; at: string; by: string;
   total: number; imported: number; failed: number; importId: string | null;
-  status: 'Success' | 'Partial' | 'Failed' | 'No changes'; message: string; failures: SyncFailure[];
+  status: 'Success' | 'Partial' | 'Failed' | 'No changes' | 'Waiting review'; message: string; failures: SyncFailure[];
+  /** Delta syncs: what changed in the ERP since the last sync. */
+  changes?: StockChange[];
+  applied?: boolean;
 }
 
 const SKEY = () => workspaceKey('vinflux.connectors.v1');
@@ -61,10 +85,36 @@ const DEFAULT_SAP: ConnectorSettings = {
   enabled: true, schedule: 'Manual', endpoint: 'https://sandbox.s4hana.example/sap/opu/odata', client: '100',
   plantMap: { WH01: 'WH-MEDC-06', WH02: 'WH-BHIW-01', WH03: 'WH-PEEN-04' }, lastSyncAt: null,
 };
-export const connectorSettings = (id: string): ConnectorSettings => loadJson<Record<string, ConnectorSettings>>(SKEY(), {})[id] ?? { ...DEFAULT_SAP, enabled: id === 'sap', plantMap: id === 'sap' ? DEFAULT_SAP.plantMap : {} };
+const DEFAULT_TALLY: ConnectorSettings = {
+  enabled: false, schedule: 'Hourly', endpoint: 'http://localhost:9000 (Tally on the principal’s server)', client: 'Agent', applyMode: 'Auto',
+  plantMap: { 'Bommasandra Godown': 'WH-BOMM-05', 'Andheri Godown': 'WH-ANDH-02' }, lastSyncAt: null,
+  agentKey: 'VFX-AGT-7Q4M-2K9D', agentStatus: 'Not installed', agentHeartbeatAt: null, sourceCompany: 'Biorad Medisys Pvt Ltd (FY 2026-27)',
+};
+export const connectorSettings = (id: string): ConnectorSettings => {
+  const saved = loadJson<Record<string, ConnectorSettings>>(SKEY(), {})[id];
+  const prof = erpProfile(id);
+  const base: ConnectorSettings = id === 'tally' ? DEFAULT_TALLY : id === 'sap' ? DEFAULT_SAP
+    : { enabled: false, schedule: 'Hourly', endpoint: prof?.endpointHint ?? '', client: '', lastSyncAt: null, applyMode: 'Auto',
+      plantMap: Object.fromEntries((prof?.sampleLocations ?? []).map((l) => [l, ''])),
+      ...(prof?.access === 'agent' ? { agentKey: `VFX-AGT-${id.toUpperCase().slice(0, 4)}-${id.length * 1371}`, agentStatus: 'Not installed' as const, agentHeartbeatAt: null, sourceCompany: '' } : {}) };
+  return { ...base, applyMode: 'Auto', ...saved };
+};
+/** A warehouse can be mastered by one ERP connector only — otherwise two systems would fight over its stock. */
+export const mappingConflicts = (id: string, s: ConnectorSettings): string[] => {
+  const mine = new Set(Object.values(s.plantMap).filter(Boolean));
+  return CONNECTORS.filter((c) => c.id !== id && c.kind === 'ERP' && c.availability === 'sandbox').flatMap((c) => {
+    const o = connectorSettings(c.id);
+    if (!o.enabled) return [];
+    return Object.values(o.plantMap).filter((w) => mine.has(w)).map((w) => `${w} is already fed by ${c.name}.`);
+  });
+};
 export const saveSettings = (id: string, s: ConnectorSettings) => { const all = loadJson<Record<string, ConnectorSettings>>(SKEY(), {}); all[id] = s; saveJson(SKEY(), all); notify(); };
+export const saveRunsList = (r: SyncRun[]) => saveRuns(r);
 export const syncRuns = (): SyncRun[] => loadJson<SyncRun[]>(RKEY(), []);
 const saveRuns = (r: SyncRun[]) => { saveJson(RKEY(), r.slice(0, 50)); notify(); };
+
+/** How stock rows from a connector are labelled in the ledger and import history. */
+export const sourceLabel = (id: string) => { const p = erpProfile(id); return p ? `${p.name} (${p.access === 'agent' ? 'agent' : 'sandbox'})` : id; };
 
 /* --------------------- SAP sandbox: stock snapshot --------------------- */
 
@@ -101,52 +151,18 @@ export const sapStockSnapshot = (ctx: ImportContext): string[][] => {
   return rows;
 };
 
-/** Apply value mapping (plant → warehouse) to a parsed SAP table. */
-const mapValues = (rows: RowValues[], s: ConnectorSettings) => rows.map((r) => ({ ...r, warehouse: s.plantMap[r.warehouse] ?? r.warehouse }));
-
-const toFailures = (results: RowResult[]): SyncFailure[] => results.filter((r) => r.errors.length).map((r) => ({ row: r.row, values: r.values, errors: r.errors, resolved: false }));
-
-export const runSapStockSync = (ctx: ImportContext): SyncRun => {
-  const s = connectorSettings('sap');
-  const entity = ENTITIES.find((e) => e.id === 'opening-stock')!;
-  const now = new Date().toISOString();
-  const loaded = importHistory().some((b) => b.entityId === 'opening-stock' && b.source.startsWith('SAP S/4HANA') && b.status === 'Imported');
-  let run: SyncRun;
-  if (!s.enabled) {
-    run = { id: newId('run'), connectorId: 'sap', entity: entity.label, at: now, by: ctx.actor, total: 0, imported: 0, failed: 0, importId: null, status: 'Failed', message: 'Connector is switched off.', failures: [] };
-  } else if (loaded) {
-    run = { id: newId('run'), connectorId: 'sap', entity: entity.label, at: now, by: ctx.actor, total: 0, imported: 0, failed: 0, importId: null, status: 'No changes', message: 'Opening stock already loaded from SAP. Later syncs bring only stock movements (delta); none in the sandbox.', failures: [] };
-  } else {
-    const table = sapStockSnapshot(ctx);
-    const rows = mapValues(rowsFromTable(table, autoMatch(table[0], entity), entity), s);
-    const results = entity.validate(rows, ctx, { status: 'Available' });
-    const ok = results.filter((r) => !r.errors.length);
-    const batch = ok.length ? runImport(entity, results, ctx, { status: 'Available' }, `SAP stock snapshot ${now.slice(0, 10)}`, 'SAP S/4HANA (sandbox)') : null;
-    const failures = toFailures(results);
-    run = {
-      id: newId('run'), connectorId: 'sap', entity: entity.label, at: now, by: ctx.actor, total: results.length, imported: ok.length, failed: failures.length,
-      importId: batch?.id ?? null, status: failures.length ? (ok.length ? 'Partial' : 'Failed') : 'Success',
-      message: batch ? batch.summary : 'Nothing imported.', failures,
-    };
-  }
-  saveRuns([run, ...syncRuns()]);
-  saveSettings('sap', { ...s, lastSyncAt: now });
-  emit(run.status === 'Failed' ? 'connector.failed' : 'connector.synced', 'Integration Hub', ctx.actor, `SAP S/4HANA · ${run.entity}: ${run.status} — ${run.imported} imported, ${run.failed} failed`, { runId: run.id });
-  return run;
-};
-
 /** Re-check failed records with the current mappings and import the ones that now pass. */
 export const retryFailures = (runId: string, ctx: ImportContext): { fixed: number; still: number } => {
   const runs = syncRuns();
   const run = runs.find((r) => r.id === runId);
   if (!run) return { fixed: 0, still: 0 };
   const s = connectorSettings(run.connectorId);
-  const entity = ENTITIES.find((e) => e.label === run.entity)!;
+  const entity = ENTITIES.find((e) => e.label === run.entity) ?? ENTITIES.find((e) => e.id === 'opening-stock')!;
   const open = run.failures.filter((f) => !f.resolved);
-  const remapped = open.map((f) => ({ ...f.values, warehouse: s.plantMap[f.values.warehouse] ?? f.values.warehouse }));
+  const remapped = open.map((f) => ({ ...f.values, warehouse: s.plantMap[f.values.warehouse] || f.values.warehouse }));
   const results = entity.validate(remapped, ctx, { status: 'Available' });
   const okIdx = results.map((r, i) => (r.errors.length ? -1 : i)).filter((i) => i >= 0);
-  if (okIdx.length) runImport(entity, okIdx.map((i) => results[i]), ctx, { status: 'Available' }, `SAP retry ${new Date().toISOString().slice(0, 10)}`, 'SAP S/4HANA (sandbox) · retry');
+  if (okIdx.length) runImport(entity, okIdx.map((i) => results[i]), ctx, { status: 'Available' }, `${erpProfile(run.connectorId)?.name ?? run.connectorId} retry ${new Date().toISOString().slice(0, 10)}`, `${sourceLabel(run.connectorId)} · retry`);
   const next = runs.map((r) => (r.id !== runId ? r : {
     ...r,
     imported: r.imported + okIdx.length,
@@ -158,6 +174,6 @@ export const retryFailures = (runId: string, ctx: ImportContext): { fixed: numbe
   }));
   next.forEach((r) => { if (r.id === runId) { const left = r.failures.filter((f) => !f.resolved).length; r.failed = left; r.status = left ? 'Partial' : 'Success'; } });
   saveRuns(next);
-  emit('connector.synced', 'Integration Hub', ctx.actor, `SAP retry: ${okIdx.length} record(s) imported, ${open.length - okIdx.length} still failing`, { runId });
+  emit('connector.synced', 'Integration Hub', ctx.actor, `${erpProfile(run.connectorId)?.name ?? run.connectorId} retry: ${okIdx.length} record(s) imported, ${open.length - okIdx.length} still failing`, { runId });
   return { fixed: okIdx.length, still: open.length - okIdx.length };
 };
