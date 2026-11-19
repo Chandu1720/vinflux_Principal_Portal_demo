@@ -52,6 +52,11 @@ export const Topbar: React.FC<TopbarProps> = ({
   } else if (location.pathname.startsWith('/users')) {
     pageTitle = 'Users & Roles';
     modeTag = 'Platform';
+  } else if (location.pathname.startsWith('/qc')) {
+    pageTitle = 'Quality Control';
+  } else if (location.pathname.startsWith('/imports')) {
+    pageTitle = 'Imports';
+    modeTag = 'Supply';
   } else if (location.pathname.startsWith('/procurement')) {
     pageTitle = 'Procurement & Vendors';
     modeTag = 'Supply';

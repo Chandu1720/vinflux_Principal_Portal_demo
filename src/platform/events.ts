@@ -19,7 +19,8 @@ export type PlatformEventType =
   | 'crm.lead.added' | 'crm.lead.converted' | 'crm.opp.won'
   | 'secondary.accepted'
   | 'claim.settled'
-  | 'payment.recorded';
+  | 'payment.recorded'
+  | 'qc.released';
 
 export interface PlatformEvent {
   id: string;

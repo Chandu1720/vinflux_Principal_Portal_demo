@@ -22,6 +22,8 @@ import { cases as surgicalCases, sets as surgicalSets, subscribeSurgical } from 
 import { returns, subscribeReturns } from '../../modules/returns/returnStore';
 import { complaints, recalls, subscribeRecall } from '../../modules/recall/recallStore';
 import { ageing, allTasks, subscribeCollections } from '../../modules/collections/collectionsStore';
+import { inspections as qcInspections, subscribeQc } from '../../modules/qc/qcStore';
+import { incoming as impIncoming, missingDocs, shipments as impShipments, subscribeImports } from '../../modules/imports/importsStore';
 import { grns as procGrns, pos as procPos, subscribeProcurement, vendorInvoices } from '../../modules/procurement/procurementStore';
 
 const inr = (n: number) => (n >= 10000000 ? `₹${(n / 10000000).toFixed(2)} Cr` : n >= 100000 ? `₹${(n / 100000).toFixed(1)} L` : `₹${Math.round(n).toLocaleString('en-IN')}`);
@@ -33,7 +35,7 @@ interface Section { module: ModuleId; title: string; path: string; tiles: Tile[]
 interface Attention { text: string; count: number; path: string; tone: BadgeTone }
 
 const HomeDashboard: React.FC = () => {
-  useSubscribe(subscribeOrders, subscribeStock, subscribeSecondary, subscribeClaims, subscribeCrm, subscribeSurgical, subscribeReturns, subscribeRecall, subscribeCollections, subscribeProcurement);
+  useSubscribe(subscribeOrders, subscribeStock, subscribeSecondary, subscribeClaims, subscribeCrm, subscribeSurgical, subscribeReturns, subscribeRecall, subscribeCollections, subscribeProcurement, subscribeImports, subscribeQc);
   const { enabled } = usePlatform();
   const navigate = useNavigate();
   const { activePrincipal, products, currentUser } = useApp();
@@ -91,6 +93,27 @@ const HomeDashboard: React.FC = () => {
       need(true, 'Receipts waiting for QC', qc, '/procurement?tab=grn');
       need(true, 'Vendor invoices that don’t match', ex, '/procurement?tab=invoices', 'red');
       need(true, 'Purchase orders past their delivery date', lateP, '/procurement', 'red');
+    }
+    if (enabled('imports')) {
+      const ss = impShipments(pid); const port = ss.filter((x) => x.status === 'Arrived at port').length; const miss = ss.filter((x) => x.status !== 'Received' && missingDocs(x).length).length;
+      sections.push({ module: 'imports', title: 'Imports', path: '/imports', tiles: [
+        { label: 'On the way', value: ss.filter((x) => ['Booked', 'Departed'].includes(x.status)).length, foot: `${impIncoming(pid).reduce((a, x) => a + x.qty, 0)} unit(s)` },
+        { label: 'At port to clear', value: port, tone: port ? 'amber' : undefined },
+        { label: 'Documents missing', value: miss, tone: miss ? 'red' : undefined },
+      ] });
+      need(true, 'Import shipments at port waiting for clearance', port, '/imports');
+      need(true, 'Import shipments missing documents', miss, '/imports', 'red');
+    }
+    if (enabled('qc')) {
+      const qi = qcInspections(pid); const n = (st: string) => qi.filter((x) => x.status === st).length;
+      sections.push({ module: 'qc', title: 'Quality Control', path: '/qc', tiles: [
+        { label: 'To inspect', value: n('To inspect'), tone: n('To inspect') ? 'amber' : undefined },
+        { label: 'Awaiting release', value: n('Awaiting release') },
+        { label: 'On hold', value: n('On hold'), tone: n('On hold') ? 'red' : undefined },
+      ] });
+      need(true, 'Lots in Quarantine waiting for inspection', n('To inspect'), '/qc');
+      need(true, 'Inspected lots waiting for QC release', n('Awaiting release'), '/qc');
+      need(true, 'Lots on QC hold', n('On hold'), '/qc', 'red');
     }
     if (enabled('logistics')) {
       const sh = allShipments().filter((x) => x.order.principalId === pid);

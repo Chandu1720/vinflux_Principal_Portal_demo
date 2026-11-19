@@ -170,6 +170,8 @@ export const Sidebar: React.FC = () => {
           {enabled('orders') && nav('/orders', 'Orders', ic('M3 3h2l2.4 12.4a2 2 0 002 1.6h7.7a2 2 0 002-1.6L21 7H6M10 21h.01M17 21h.01'))}
           {enabled('logistics') && nav('/logistics', 'Logistics', ic('M1 3h15v13H1zM16 8h4l3 3v5h-7M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z'))}
           {enabled('procurement') && nav('/procurement', 'Procurement', ic('M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0'))}
+          {enabled('imports') && nav('/imports', 'Imports', ic('M2 20h20M5 17l2-9h10l2 9M9 8V4h6v4'))}
+          {enabled('qc') && nav('/qc', 'Quality Control', ic('M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z'))}
           {enabled('collections') && nav('/collections', 'Collections', ic('M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6'))}
           {enabled('returns') && nav('/returns', 'Returns', ic('M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3'))}
           {enabled('recall') && nav('/recall', 'Complaints & Recall', ic('M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z'))}

@@ -35,9 +35,11 @@ export interface SetupAnswers {
   claims: 'yes' | 'no';
   collections: 'yes' | 'no';
   procurement: 'vinflux' | 'erp' | 'hybrid' | 'no';
+  imports: 'yes' | 'no';
+  qc: 'yes' | 'no';
 }
 
-const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes', secondary: 'yes', claims: 'yes', collections: 'yes', procurement: 'vinflux' };
+const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes', secondary: 'yes', claims: 'yes', collections: 'yes', procurement: 'vinflux', imports: 'yes', qc: 'yes' };
 const KEY = 'vinflux.setup.v1';
 
 type Q = { id: keyof SetupAnswers; q: string; help?: string; options: { id: string; label: string }[]; show?: (a: SetupAnswers, medical: boolean) => boolean };
@@ -46,6 +48,8 @@ const QUESTIONS: { group: string; items: Q[] }[] = [
     { id: 'stock', q: 'Where does your stock live?', help: 'ERP: VinFlux reads stock from your ERP (Zoho, SAP…) and never changes it. VinFlux: you keep stock here. Not tracked: orders only, no stock check.', options: [{ id: 'erp', label: 'In our ERP' }, { id: 'vinflux', label: 'In VinFlux' }, { id: 'none', label: 'Not tracked' }] },
     { id: 'supply', q: 'How do you get your products?', help: 'Manufacturing stays in your ERP. VinFlux only needs the finished stock.', options: [{ id: 'buy', label: 'We buy / import finished goods' }, { id: 'erp-production', label: 'We make them (ERP runs production)' }, { id: 'none', label: 'Not relevant' }] },
     { id: 'procurement', q: 'Where do you raise purchase orders to your vendors?', show: (a) => a.supply !== 'none', help: 'VinFlux: POs, receipt, QC and invoice match here. ERP: shown here as incoming supply. Mixed: POs in the ERP, receipt and QC in VinFlux.', options: [{ id: 'vinflux', label: 'In VinFlux' }, { id: 'erp', label: 'In our ERP' }, { id: 'hybrid', label: 'Mixed' }, { id: 'no', label: 'Not needed' }] },
+    { id: 'imports', q: 'Do you import products (from suppliers abroad or your own plant abroad)?', show: (a) => a.supply !== 'none' && a.procurement !== 'no', help: 'Imports: shipments, documents, bill of entry, duty and landed cost per unit.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'qc', q: 'Must goods be inspected and released by QC before they can be sold?', show: (a) => a.stock !== 'none', help: 'Quality Control: purchase receipts, imports and returns wait in Quarantine until an inspector records and a second person releases them.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
   ] },
   { group: 'Selling', items: [
     { id: 'crm', q: 'Will your sales team track leads and deals in VinFlux?', help: 'Sales CRM: leads, opportunities, follow-ups and a team dashboard.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
@@ -77,7 +81,9 @@ export const plan = (a: SetupAnswers, medical: boolean) => {
   if (a.claims === 'yes') on.push('claims');
   if (a.collections === 'yes') on.push('collections');
   if (a.procurement !== 'no' && a.supply !== 'none') on.push('procurement');
+  if (a.imports === 'yes' && a.procurement !== 'no' && a.supply !== 'none') on.push('imports');
   if (a.stock !== 'none' || a.orders === 'yes') on.push('inventory');
+  if (a.qc === 'yes' && a.stock !== 'none') on.push('qc');
   if (a.prices === 'yes' || a.orders === 'yes') on.push('price-lists');
   if (a.orders === 'yes') { on.push('orders'); if (a.delivery === 'vinflux') on.push('logistics'); }
   if (a.returns === 'yes' || a.recall === 'yes') on.push('returns');
@@ -86,6 +92,7 @@ export const plan = (a: SetupAnswers, medical: boolean) => {
   if (cases) on.push('surgical');
   const options: Record<string, OptionValue> = {
     'orders.invoicing': a.invoicing,
+    'procurement.inspection': a.qc === 'yes',
     'procurement.owner': a.procurement === 'no' ? 'vinflux' : a.procurement,
     'orders.creditCheck': a.credit,
     'returns.creditNotes': a.invoicing === 'vinflux',

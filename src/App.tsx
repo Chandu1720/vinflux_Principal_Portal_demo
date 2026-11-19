@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AppProvider, useApp } from './context/AppContext.tsx';
 import { PlatformProvider, usePlatform } from './platform/PlatformContext';
 import { ModuleOffPage } from './platform/pages/ModuleOffPage';
+import { setImportsGate } from './modules/procurement/procurementStore';
 import LoginPage from './platform/pages/LoginPage';
 import { Sidebar } from './components/layout/Sidebar.tsx';
 import { Topbar } from './components/layout/Topbar.tsx';
@@ -24,6 +25,8 @@ const SecondaryPage = lazy(() => import('./modules/secondary/SecondaryPage'));
 const ClaimsPage = lazy(() => import('./modules/claims/ClaimsPage'));
 const CollectionsPage = lazy(() => import('./modules/collections/CollectionsPage'));
 const ProcurementPage = lazy(() => import('./modules/procurement/ProcurementPage'));
+const ImportsPage = lazy(() => import('./modules/imports/ImportsPage'));
+const QcPage = lazy(() => import('./modules/qc/QcPage'));
 const DataImportPage = lazy(() => import('./platform/pages/DataImportPage'));
 const IntegrationHubPage = lazy(() => import('./platform/pages/IntegrationHubPage'));
 const StockOnHandPage = lazy(() => import('./modules/inventory/StockOnHandPage'));
@@ -42,7 +45,9 @@ const AppContent: React.FC = () => {
   const location = useLocation();
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
   const isGtmV2 = location.pathname.startsWith('/gtm-v2');
-  const { pathAllowed } = usePlatform();
+  const { pathAllowed, enabled } = usePlatform();
+  // Overseas POs are received only through a cleared import shipment while Imports is on (IMS-01).
+  setImportsGate(() => enabled('imports'));
   const guard = (el: React.ReactNode) => (pathAllowed(location.pathname) ? <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>{el}</Suspense> : <ModuleOffPage />);
 
   if (isGtmV2 && !pathAllowed(location.pathname)) return <Navigate to="/modules" replace />;
@@ -92,6 +97,8 @@ const AppContent: React.FC = () => {
             <Route path="/claims" element={guard(<ClaimsPage />)} />
             <Route path="/collections" element={guard(<CollectionsPage />)} />
             <Route path="/procurement" element={guard(<ProcurementPage />)} />
+            <Route path="/imports" element={guard(<ImportsPage />)} />
+            <Route path="/qc" element={guard(<QcPage />)} />
             <Route path="/surgical" element={guard(<SurgicalPage />)} />
             <Route path="/orders" element={guard(<OrdersPage />)} />
             <Route path="/logistics" element={guard(<LogisticsPage />)} />

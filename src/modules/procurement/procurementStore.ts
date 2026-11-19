@@ -204,9 +204,15 @@ export const pullFromErp = (principalId: string, warehouseId: string, by: string
 /* ------------------------------------- Receipts ------------------------------------- */
 
 export interface ReceiveLine { lineId: string; qty: number; batch: string; vendorBatch: string; expiry: string | null; serials: string[] }
-export const receive = (poId: string, lines: ReceiveLine[], coa: string, fxRate: number | null, overReason: string, by: string, serialTracked: (productId: string) => boolean): Result => {
+/** `via` is set when an import shipment receives the goods: landed cost per unit and the shipment number. */
+export interface ReceiveVia { shipmentNo: string; landedUnit: Record<string, number> }
+let importsOn = () => false;
+/** The Imports module registers itself so overseas POs are received only through a cleared shipment (IMS-01). */
+export const setImportsGate = (fn: () => boolean) => { importsOn = fn; };
+export const receive = (poId: string, lines: ReceiveLine[], coa: string, fxRate: number | null, overReason: string, by: string, serialTracked: (productId: string) => boolean, via?: ReceiveVia): Result => {
   const p = getPO(poId); if (!p || !['Sent', 'Acknowledged', 'Part received'].includes(p.status)) return { ok: false, message: 'This order can’t be received now.' };
   if (owner() === 'erp') return { ok: false, message: 'Receipts are posted in your ERP; VinFlux shows them after the next sync.' };
+  if (!via && importsOn() && getVendor(p.vendorId)?.kind === 'Overseas supplier') return { ok: false, message: 'Imported goods are received from their import shipment once customs has cleared it (Imports → shipment → Receive).' };
   const tol = Number(optChoice('procurement', 'overTolerance')) || 0;
   const errs: string[] = []; const over: string[] = [];
   const rl = lines.filter((l) => l.qty > 0);
@@ -230,8 +236,8 @@ export const receive = (poId: string, lines: ReceiveLine[], coa: string, fxRate:
     lines: rl.map((l) => ({ ...l, productId: p.lines.find((x) => x.id === l.lineId)!.productId, accepted: quarantine ? null : l.qty, rejected: quarantine ? null : 0, reason: '' })),
     status: quarantine ? 'In QC' : 'Accepted', overReceiptOk: over.length ? `${overReason} (${by})` : null, rtv: null, stockPosted: toStock, qcBy: quarantine ? null : 'No inspection' };
   if (toStock) post(g.lines.flatMap((l) => {
-    const unit = (p.lines.find((x) => x.id === l.lineId)!.price) * (fxRate ?? 1);
-    const base = { type: 'RECEIPT' as const, locType: 'COMPANY' as const, warehouseId: p.warehouseId, bin: quarantine ? 'QC' : 'MAIN', productId: l.productId, variantSku: null, batch: l.batch.trim(), mfgDate: null, expiryDate: l.expiry, unitCost: Math.round(unit * 100) / 100, status: (quarantine ? 'Quarantine' : 'Available') as 'Quarantine' | 'Available', importId: null, source: `${no} · ${p.no} · ${p.vendorName}`, by, refId: g.id };
+    const unit = via?.landedUnit[l.lineId] ?? (p.lines.find((x) => x.id === l.lineId)!.price) * (fxRate ?? 1);
+    const base = { type: 'RECEIPT' as const, locType: 'COMPANY' as const, warehouseId: p.warehouseId, bin: quarantine ? 'QC' : 'MAIN', productId: l.productId, variantSku: null, batch: l.batch.trim(), mfgDate: null, expiryDate: l.expiry, unitCost: Math.round(unit * 100) / 100, status: (quarantine ? 'Quarantine' : 'Available') as 'Quarantine' | 'Available', importId: null, source: `${no} · ${p.no} · ${p.vendorName}${via ? ` · ${via.shipmentNo}` : ''}`, by, refId: g.id };
     return l.serials.filter(Boolean).length ? l.serials.filter(Boolean).map((s) => ({ ...base, serial: s as string | null, qty: 1 })) : [{ ...base, serial: null as string | null, qty: l.qty }];
   }));
   const linesN = p.lines.map((pl) => { const got = rl.filter((l) => l.lineId === pl.id).reduce((a, l) => a + l.qty, 0); return { ...pl, receivedQty: pl.receivedQty + got, acceptedQty: pl.acceptedQty + (quarantine ? 0 : got) }; });

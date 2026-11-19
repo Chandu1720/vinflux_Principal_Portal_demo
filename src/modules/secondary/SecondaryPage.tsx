@@ -14,14 +14,16 @@ import type { Partner } from '../gtm-v2/types';
 import { balances, subscribeStock } from '../inventory/stockStore';
 import type { LocType } from '../inventory/stockStore';
 import {
-  CUSTOMER_TYPES, FRESH_DAYS, ROUTE_LABEL, SHARING_LABEL, accept, coverage, downstream, ensureSecondaryDemo, getReport, itemMapOf, mapCode, partnerBoard, prevPeriod,
+  CUSTOMER_TYPES, FRESH_DAYS, ROUTE_LABEL, SCOPE_LABEL, SHARING_LABEL, accept, consentOf, ensurePlatformDemo, requestConsent, respondConsent, setOnPlatform, syncFromPlatform, withdrawConsent, coverage, downstream, ensureSecondaryDemo, getReport, itemMapOf, mapCode, partnerBoard, prevPeriod,
   reject, reports as allReports, saveSecSettings, saveSetup, secSettings, sellThrough, setupOf, submitReport, subscribeSecondary, thisPeriod,
 } from './secondaryStore';
-import type { Cadence, RawLine, ReportStatus, Route, Sharing } from './secondaryStore';
+import type { Cadence, ConsentScopes, ConsentStatus, RawLine, ReportStatus, Route, Sharing } from './secondaryStore';
 
 const inr = (n: number) => (n >= 100000 ? `₹${(n / 100000).toFixed(1)} L` : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const STATUS_TONE: Record<ReportStatus, BadgeTone> = { Accepted: 'green', 'Needs review': 'amber', Rejected: 'slate' };
-const ROUTES = Object.keys(ROUTE_LABEL) as Route[];
+const ROUTES = (Object.keys(ROUTE_LABEL) as Route[]).filter((r) => r !== 'vinflux');
+const CONSENT_TONE: Record<ConsentStatus, BadgeTone> = { 'Not requested': 'slate', Requested: 'amber', Granted: 'green', Declined: 'red', Withdrawn: 'red', Expired: 'red' };
+const scopeText = (x: ConsentScopes) => (Object.keys(x) as (keyof ConsentScopes)[]).filter((k) => x[k]).map((k) => SCOPE_LABEL[k]).join(', ') || 'nothing';
 const locOf = (p: Partner): LocType => (p.partnerTypeId === 'pt-cnf' ? 'CNF' : p.institution ? 'HOSPITAL' : 'PARTNER');
 const TEMPLATE = 'type,item_code,item_name,batch,serial,expiry,qty,customer,customer_type,town,invoice_no,date,value\nstock,EVO-TRAY-SZ3-10L,Tray size 3,B2611A,,2029-12-31,25,,,,,,\nsale,EVO-TRAY-SZ3-10L,Tray size 3,B2611A,,,4,Yashoda Hospitals,Hospital,Hyderabad,INV/101,2026-11-05,72000\n';
 
@@ -141,6 +143,7 @@ const ReportModal: React.FC<{ id: string; onClose: () => void; pName: (id: strin
             </div>
           </Card>
         )}
+        {r.scopes && (!r.scopes.stock || !r.scopes.sales) && <Alert tone="info">The distributor shares only {r.scopes.stock ? 'stock' : 'sales'} (consent), so this feed can’t be reconciled.</Alert>}
         <Card title="Reconciliation" subtitle="Opening + received from us (VinFlux deliveries) − sold = expected closing (SEC-02)" flush>
           <div className="g2-table-wrap"><table className="g2-table">
             <thead><tr><th>Product</th><th style={{ textAlign: 'right' }}>Opening</th><th style={{ textAlign: 'right' }}>Received</th><th style={{ textAlign: 'right' }}>Sold</th><th style={{ textAlign: 'right' }}>Expected</th><th style={{ textAlign: 'right' }}>Reported</th><th>Result</th></tr></thead>
@@ -180,14 +183,56 @@ const ReportModal: React.FC<{ id: string; onClose: () => void; pName: (id: strin
 const SetupModal: React.FC<{ partner: Partner; onClose: () => void; onRecord: () => void; onOpen: (id: string) => void; canEdit: boolean }> = ({ partner, onClose, onRecord, onOpen, canEdit }) => {
   useSubscribe(subscribeSecondary);
   const { activePrincipal, showToast } = useApp();
+  const { products, currentUser } = useApp();
   const s = setupOf(partner.id);
   const set = (p: Partial<typeof s>) => { saveSetup({ ...s, ...p }); showToast('Saved.', 'success'); };
+  const c = consentOf(partner.id);
+  const [ask, setAsk] = useState<ConsentScopes>({ stock: true, sales: true, cases: false });
+  const [demo, setDemo] = useState<{ scopes: ConsentScopes; identity: Sharing; until: string } | null>(null);
+  const tell = (r: { ok: boolean; message: string }) => showToast(r.message, r.ok ? 'success' : 'warning');
+  const me = { id: partner.id, name: partner.name, locType: locOf(partner) };
   const rs = allReports(activePrincipal.id).filter((r) => r.partnerId === partner.id).sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
   const mapped = Object.entries(itemMapOf(partner.id));
   return (
-    <Modal open size="lg" title={partner.name} subtitle={`${partner.code} · how this partner’s stock and sales reach you`} onClose={onClose} footer={canEdit ? <Button variant="primary" icon={<Plus size={15} />} onClick={onRecord}>Record report</Button> : undefined}>
+    <Modal open size="lg" title={partner.name} subtitle={`${partner.code} · how this partner’s stock and sales reach you`} onClose={onClose} footer={canEdit && !s.onPlatform ? <Button variant="primary" icon={<Plus size={15} />} onClick={onRecord}>Record report</Button> : undefined}>
       <div className="g2-stack">
-        <Card title="Route and sharing">
+        <Card title="VinFlux distributor platform" subtitle="If this distributor runs its business on VinFlux, its stock and sales can flow live — only with its consent">
+          <div className="g2-row" style={{ gap: 8 }}><input type="checkbox" checked={!!s.onPlatform} disabled={!canEdit} onChange={(e) => { setOnPlatform(partner.id, e.target.checked); showToast(e.target.checked ? `${partner.name} marked as on the VinFlux platform.` : 'Back to reports.', 'success'); }} /> <span>{partner.name} uses the VinFlux distributor platform</span></div>
+          {s.onPlatform && (
+            <div className="g2-stack" style={{ marginTop: 12 }}>
+              <div className="g2-row" style={{ gap: 8 }}><strong>Consent</strong><Badge tone={CONSENT_TONE[c.status]} dot>{c.status}</Badge>{c.lastSyncAt && <span className="g2-small g2-muted">last pulled {c.lastSyncAt.slice(0, 16).replace('T', ' ')}</span>}</div>
+              {c.status === 'Granted' && <div className="g2-small">Shares: <strong>{scopeText(c.granted)}</strong> · customers: {SHARING_LABEL[c.identity]}{c.validUntil ? ` · until ${c.validUntil}` : ''}</div>}
+              {c.status === 'Requested' && <div className="g2-small">Asked for: {scopeText(c.requested)} — waiting for the distributor to approve in their VinFlux account.</div>}
+              {['Declined', 'Withdrawn', 'Expired'].includes(c.status) && <Alert tone="warn">No data flows from {partner.name}. {c.status === 'Withdrawn' ? 'Data received before withdrawal stays for audit.' : 'You can ask again.'}</Alert>}
+              {c.status !== 'Requested' && c.status !== 'Granted' && canEdit && (
+                <div className="g2-row" style={{ gap: 12, flexWrap: 'wrap' }}>
+                  {(Object.keys(SCOPE_LABEL) as (keyof ConsentScopes)[]).map((k) => <label key={k} className="g2-row" style={{ gap: 4 }}><input type="checkbox" checked={ask[k]} onChange={(e) => setAsk({ ...ask, [k]: e.target.checked })} /> {SCOPE_LABEL[k]}</label>)}
+                  <Button size="sm" variant="primary" onClick={() => tell(requestConsent(partner.id, ask, currentUser.name))}>Request consent</Button>
+                </div>
+              )}
+              {c.status === 'Granted' && canEdit && <div><Button size="sm" onClick={() => tell(syncFromPlatform(activePrincipal.id, me, products, currentUser.name))}>Pull now</Button></div>}
+              <div className="g2-card" style={{ padding: 10, background: '#fafaf9', boxShadow: 'none' }}>
+                <div className="g2-small g2-muted" style={{ marginBottom: 6 }}>Demo only — what the distributor does in its own VinFlux account:</div>
+                <div className="g2-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  {c.status === 'Requested' && <><Button size="sm" variant="success" onClick={() => setDemo({ scopes: c.requested, identity: 'masked', until: '' })}>Grant…</Button><Button size="sm" variant="danger" onClick={() => tell(respondConsent(partner.id, false, `${partner.name} (owner)`))}>Decline</Button></>}
+                  {c.status === 'Granted' && <Button size="sm" variant="danger" onClick={() => tell(withdrawConsent(partner.id, `${partner.name} (owner)`))}>Withdraw consent</Button>}
+                  {!['Requested', 'Granted'].includes(c.status) && <span className="g2-small g2-muted">Nothing to answer.</span>}
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+        {demo && (
+          <Modal open variant="modal" title={`${partner.name} grants access`} subtitle="The distributor can share less than you asked" onClose={() => setDemo(null)}
+            footer={<><Button onClick={() => setDemo(null)}>Cancel</Button><Button variant="success" onClick={() => { tell(respondConsent(partner.id, true, `${partner.name} (owner)`, demo.scopes, demo.identity, demo.until || null)); setDemo(null); if (demo.scopes.stock || demo.scopes.sales) tell(syncFromPlatform(activePrincipal.id, me, products, 'VinFlux platform')); }}>Grant</Button></>}>
+            <div className="g2-stack">
+              {(Object.keys(SCOPE_LABEL) as (keyof ConsentScopes)[]).filter((k) => c.requested[k]).map((k) => <label key={k} className="g2-row" style={{ gap: 6 }}><input type="checkbox" checked={demo.scopes[k]} onChange={(e) => setDemo({ ...demo, scopes: { ...demo.scopes, [k]: e.target.checked } })} /> {SCOPE_LABEL[k]}</label>)}
+              <Field label="Customer identity"><Select value={demo.identity} options={(Object.keys(SHARING_LABEL) as Sharing[]).map((x) => ({ value: x, label: SHARING_LABEL[x] }))} onChange={(v) => setDemo({ ...demo, identity: v as Sharing })} /></Field>
+              <Field label="Valid until (optional)"><Input type="date" value={demo.until} onChange={(e) => setDemo({ ...demo, until: e.target.value })} /></Field>
+            </div>
+          </Modal>
+        )}
+        {!s.onPlatform && <Card title="Route and sharing">
           <FormGrid>
             <Field label="Route"><Select value={s.route} disabled={!canEdit} options={ROUTES.map((r) => ({ value: r, label: ROUTE_LABEL[r] }))} onChange={(v) => set({ route: v as Route })} /></Field>
             {s.route === 'connector' && <Field label="Partner’s system"><Select value={s.system} disabled={!canEdit} options={['Tally (agent)', 'Marg', 'Busy', 'Zoho Books', 'SAP Business One', 'Other'].map((x) => ({ value: x, label: x }))} onChange={(v) => set({ system: v })} /></Field>}
@@ -195,7 +240,7 @@ const SetupModal: React.FC<{ partner: Partner; onClose: () => void; onRecord: ()
             <Field label="Customer identity shared" hint="Set by the partner’s sharing agreement (SEC-04)"><Select value={s.sharing} disabled={!canEdit} options={(Object.keys(SHARING_LABEL) as Sharing[]).map((x) => ({ value: x, label: SHARING_LABEL[x] }))} onChange={(v) => set({ sharing: v as Sharing })} /></Field>
           </FormGrid>
           {s.route === 'none' && <div style={{ marginTop: 8 }}><Alert tone="info">Not connected: figures are estimated from our deliveries and a {secSettings().estimateSellOutPct}% monthly sell-out, labelled “Estimated” and never used for claims (SEC-06).</Alert></div>}
-        </Card>
+        </Card>}
         <Card title="Reports" flush>
           <div className="g2-table-wrap"><table className="g2-table">
             <thead><tr><th>Report</th><th>Month</th><th>Route</th><th>Received</th><th>Status</th></tr></thead>
@@ -228,7 +273,15 @@ const SecondaryPage: React.FC = () => {
   const [days, setDays] = useState('90');
   const m = currentUser.matrix;
   const canEdit = !m || !!m.inventory?.includes('edit') || !!m.gtm?.includes('edit');
-  useEffect(() => { if (partners.length && products.length) ensureSecondaryDemo(activePrincipal.id, partners.map((p) => ({ id: p.id, name: p.name, locType: locOf(p) })), products.filter((p) => p.lifecycleStatus === 'Active'), 'System'); }, [partners.length, products.length, activePrincipal.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!partners.length || !products.length) return;
+    const ps = partners.map((p) => ({ id: p.id, name: p.name, locType: locOf(p) }));
+    const act = products.filter((p) => p.lifecycleStatus === 'Active');
+    ensureSecondaryDemo(activePrincipal.id, ps, act, 'System');
+    ensurePlatformDemo(activePrincipal.id, ps, act);
+    // Live feed: pull from every distributor on the platform that has granted consent (a server job in production).
+    ps.filter((p) => setupOf(p.id).onPlatform && consentOf(p.id).status === 'Granted').forEach((p) => syncFromPlatform(activePrincipal.id, p, act, 'VinFlux platform'));
+  }, [partners.length, products.length, activePrincipal.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const unitValue = (pid: string) => { const p = products.find((x) => x.id === pid); return p?.pricingReference?.standardCost ?? (p?.pricingReference?.mrp ?? 0) * 0.6; };
   const pName = (id: string) => partnersAll.find((p) => p.id === id)?.name ?? id;
@@ -277,11 +330,11 @@ const SecondaryPage: React.FC = () => {
               {board.map((r) => (
                 <tr key={r.partnerId} style={{ cursor: 'pointer' }} onClick={() => setOpenP(r.partnerId)}>
                   <td className="g2-strong">{pName(r.partnerId)}<div className="g2-cell-sub">{SHARING_LABEL[r.setup.sharing]}</div></td>
-                  <td className="g2-small">{ROUTE_LABEL[r.setup.route]}{r.setup.system ? ` · ${r.setup.system}` : ''}<div className="g2-cell-sub">every {r.setup.cadence === 'nightly' ? 'night' : r.setup.cadence === 'weekly' ? 'week' : 'month'}</div></td>
-                  <td>{r.estimated ? <Badge tone="slate">Estimated</Badge> : r.last ? <><Badge tone={r.fresh ? 'green' : 'red'} dot>{r.fresh ? 'Fresh' : 'Stale'}</Badge> <span className="g2-small">{r.last.period} · {r.age}d ago</span></> : <Badge tone="red">No data</Badge>}</td>
+                  <td className="g2-small">{r.setup.onPlatform ? <>{ROUTE_LABEL.vinflux}<div className="g2-cell-sub"><Badge tone={CONSENT_TONE[consentOf(r.partnerId).status]}>Consent: {consentOf(r.partnerId).status}</Badge></div></> : <>{ROUTE_LABEL[r.setup.route]}{r.setup.system ? ` · ${r.setup.system}` : ''}<div className="g2-cell-sub">every {r.setup.cadence === 'nightly' ? 'night' : r.setup.cadence === 'weekly' ? 'week' : 'month'}</div></>}</td>
+                  <td>{r.setup.onPlatform && consentOf(r.partnerId).status !== 'Granted' ? <Badge tone="slate">No data without consent</Badge> : r.setup.onPlatform && r.last ? <><Badge tone={r.fresh ? 'green' : 'red'} dot>{r.fresh ? 'Live' : 'Stale'}</Badge> <span className="g2-small">synced {r.age === 0 ? 'today' : `${r.age}d ago`}</span></> : r.estimated ? <Badge tone="slate">Estimated</Badge> : r.last ? <><Badge tone={r.fresh ? 'green' : 'red'} dot>{r.fresh ? 'Fresh' : 'Stale'}</Badge> <span className="g2-small">{r.last.period} · {r.age}d ago</span></> : <Badge tone="red">No data</Badge>}</td>
                   <td style={{ textAlign: 'right' }}>{r.stockUnits} units<div className="g2-cell-sub">{inr(r.stockValue)}{r.estimated ? ' (est.)' : ''}</div></td>
                   <td>{r.reconOk === null ? '—' : r.reconOk ? <Badge tone="green">Reconciles</Badge> : <Badge tone="red">Mismatch</Badge>}{r.pending > 0 && <> <Badge tone="amber">{r.pending} to review</Badge></>}</td>
-                  <td className="g2-small"><a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRecording({ preset: r.partnerId }); }}>Record</a></td>
+                  <td className="g2-small">{r.setup.onPlatform ? <span className="g2-muted">automatic</span> : <a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRecording({ preset: r.partnerId }); }}>Record</a>}</td>
                 </tr>
               ))}
             </tbody>
