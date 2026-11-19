@@ -63,7 +63,10 @@ export interface ProductPricingReference {
   institutionalTenderCap: number;
   govPriceCapEnforced: boolean;
   govNpddCeiling?: number;
+  /** Minimum margin a reseller must keep on this product (%). */
   marginFloorPercent: number;
+  /** Standard / landed cost per unit (₹), used by the margin engine. */
+  standardCost?: number;
   priceListsLinked: string[];
 }
 
@@ -103,6 +106,72 @@ export interface ProductInventoryPolicy {
   };
 }
 
+/**
+ * Industry packs: a product type belongs to one pack, and the pack decides which regulatory
+ * section, defaults and validation rules apply. Packs are switched on/off in configuration.
+ */
+export type IndustryPackId = 'medical-devices' | 'agri' | 'automotive' | 'electronics' | 'general';
+
+export interface IndustryPack {
+  id: IndustryPackId;
+  name: string;
+  description: string;
+  enabled: boolean;
+  /** Regulatory section shown in the product form. */
+  /** cdsco = Medical Devices Rules form; schema = compliance fields from src/data/compliance.ts. */
+  regulatory: 'cdsco' | 'schema' | null;
+  defaultTracking: 'Batch + Serial' | 'Batch / Lot' | 'Serial' | 'None';
+  defaultHsn: string;
+  defaultTax: string;
+}
+
+/** One industry-specific compliance field (registrations, licences, declarations). */
+export interface ComplianceField {
+  id: string;
+  label: string;
+  kind: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'bool';
+  options?: string[];
+  placeholder?: string;
+  hint?: string;
+  /** Only for these product types (empty = every type of the pack). */
+  types?: string[];
+  required?: boolean;
+  /** Required only when another field has one of these values. */
+  requiredWhen?: { field: string; in: string[] };
+  /** Shown only when another field has one of these values. */
+  showWhen?: { field: string; in: string[] };
+  pattern?: string;
+  patternHint?: string;
+  min?: number;
+  max?: number;
+  /** Date of a licence / registration: expired = blocking, near expiry = warning. */
+  expiry?: boolean;
+  group: string;
+}
+
+/** CDSCO (Medical Devices Rules 2017) registration of the product. */
+export type RiskClass = 'A' | 'B' | 'C' | 'D';
+export type LicenceType = 'Manufacturing (MD-5)' | 'Manufacturing (MD-9)' | 'Import (MD-15)' | 'Not required';
+
+export interface ProductRegulatory {
+  riskClass: RiskClass;
+  licenceType: LicenceType;
+  licenceNo: string;
+  /** YYYY-MM-DD */
+  licenceValidUntil: string;
+  implantable: boolean;
+  sterile: boolean;
+  /** Shelf life from manufacture; null = no expiry (e.g. reusable instruments). */
+  shelfLifeMonths: number | null;
+}
+
+/** One line of an instrument set / kit. */
+export interface KitComponent {
+  productId: string;
+  variantSku: string | null;
+  qty: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -136,6 +205,21 @@ export interface Product {
   pricingReference: ProductPricingReference;
   integrationMapping: ProductIntegrationMapping[];
   changeHistory: ProductChangeHistory[];
+  regulatory?: ProductRegulatory;
+  /** Instrument set / kit made of other products. */
+  isKit?: boolean;
+  kitComponents?: KitComponent[];
+  /** Maker-checker trail. */
+  submittedBy?: string | null;
+  submittedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  retireReason?: string | null;
+  /** Industry compliance values (field id → value; booleans as "Yes"/"No"). */
+  compliance?: Record<string, string>;
+  /** Names of the variant axes (e.g. ["Pack Size", "Flavour"]); size/thickness/side hold the values in order. */
+  variantAxes?: string[];
 }
 
 export interface SubCategory {
@@ -173,6 +257,8 @@ export interface ProductType {
   variantAllowed: boolean;
   attributeTemplate: string;
   defaultMinStockThreshold: number;
+  /** Industry pack this type belongs to (defaults to medical devices for older records). */
+  industryPackId?: IndustryPackId;
 }
 
 export interface ProductTemplate {
@@ -248,15 +334,32 @@ export interface Principal {
   role: string;
 }
 
+export type PermResource = 'products' | 'gtm' | 'pricing' | 'inventory' | 'data' | 'platform';
+export type PermAction = 'view' | 'edit' | 'approve' | 'configure';
+
 export interface CurrentUser {
   id: string;
   name: string;
   role: string;
   organization: string;
+  email?: string;
+  /** Booleans derived from the user's roles (kept for existing screens). */
   permissions: {
     canManageConfig: boolean;
     canApproveProducts: boolean;
     canPublishProducts: boolean;
     canRetireProducts: boolean;
+    canApproveGtm?: boolean;
+    canEditPricing?: boolean;
+    canApprovePricing?: boolean;
+    canConfigurePricing?: boolean;
+    canEditInventory?: boolean;
+    canImport?: boolean;
+    canConfigurePlatform?: boolean;
+    canManageUsers?: boolean;
   };
+  /** Full permission matrix from roles (resource → allowed actions). */
+  matrix?: Partial<Record<PermResource, PermAction[]>>;
+  /** Data scope; empty list = all. */
+  scope?: { principalIds: string[]; territoryIds: string[]; warehouseIds: string[] };
 }

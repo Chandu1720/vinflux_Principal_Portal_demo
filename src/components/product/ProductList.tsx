@@ -1,6 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext.tsx';
 import type { Product } from '../../types/product.ts';
+import { LifecycleDialog, availableActions } from './LifecycleDialog.tsx';
+import { IndustryPacksDrawer } from './IndustryPacksDrawer.tsx';
+import { packOf } from '../../utils/productLifecycle.ts';
+import type { LifecycleAction } from './LifecycleDialog.tsx';
 
 interface ProductListProps {
   onViewProduct: (productId: string) => void;
@@ -28,10 +32,14 @@ export const ProductList: React.FC<ProductListProps> = ({
     portfolios,
     productTypes,
     duplicateProduct,
-    retireProduct,
-    bulkUpdateProductStatus,
-    showToast
+    bulkApproveProducts,
+    currentUser,
+    showToast,
+    industryPacks
   } = useApp();
+  const [selectedPack, setSelectedPack] = useState('');
+  const [lifecycle, setLifecycle] = useState<{ product: Product; action: LifecycleAction } | null>(null);
+  const [packsOpen, setPacksOpen] = useState(false);
 
   const [configureOpen, setConfigureOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -90,6 +98,7 @@ export const ProductList: React.FC<ProductListProps> = ({
 
   const handleClearFilters = () => {
     setLocalSearch('');
+    setSelectedPack('');
     setSelectedPortfolio('');
     setSelectedCategory('');
     setSelectedProductType('');
@@ -111,6 +120,9 @@ export const ProductList: React.FC<ProductListProps> = ({
         const matchesSku = p.variants.some((v) => v.sku.toLowerCase().includes(query) || v.gtin.toLowerCase().includes(query));
         if (!matchesName && !matchesCode && !matchesBrand && !matchesSku) return false;
       }
+
+      // Industry
+      if (selectedPack && packOf(p.productTypeId, productTypes) !== selectedPack) return false;
 
       // Portfolio
       if (selectedPortfolio && p.portfolioId !== selectedPortfolio) return false;
@@ -135,6 +147,8 @@ export const ProductList: React.FC<ProductListProps> = ({
   }, [
     products,
     effectiveSearch,
+    selectedPack,
+    productTypes,
     selectedPortfolio,
     selectedCategory,
     selectedProductType,
@@ -185,7 +199,9 @@ export const ProductList: React.FC<ProductListProps> = ({
   const handleBulkStatus = () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    bulkUpdateProductStatus(ids, 'Active');
+    const r = bulkApproveProducts(ids);
+    showToast(r.message, r.ok ? 'success' : 'warning');
+    (r.errors ?? []).slice(0, 3).forEach((e) => showToast(e, 'warning'));
     setSelectedIds(new Set());
   };
 
@@ -232,6 +248,13 @@ export const ProductList: React.FC<ProductListProps> = ({
                 onClick={() => setConfigureOpen(false)}
               >
                 <div className="vf-dropdown-header">Product Configuration</div>
+                <div className="vf-dropdown-item" onClick={() => { setPacksOpen(true); setConfigureOpen(false); }}>
+                  <span className="vf-dropdown-icon">🧩</span>
+                  <div>
+                    <div className="vf-dropdown-title">Industry Packs</div>
+                    <div className="vf-dropdown-desc">Medical, Agri, Automotive, Electronics, General</div>
+                  </div>
+                </div>
                 <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('productTypes')}>
                   <span className="vf-dropdown-icon">🏷️</span>
                   <div>
@@ -445,6 +468,19 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
         </div>
 
+        {/* Industry chips */}
+        <div className="vf-saved-views" style={{ padding: '0 0 10px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--vf-slate-500)', textTransform: 'uppercase', marginRight: '4px' }}>Industry:</span>
+          {[{ id: '', name: 'All industries' }, ...industryPacks.filter((pk) => pk.enabled)].map((pk) => {
+            const n = pk.id ? products.filter((p) => packOf(p.productTypeId, productTypes) === pk.id).length : products.length;
+            return (
+              <button key={pk.id || 'all'} className={`vf-view-pill ${selectedPack === pk.id ? 'active' : ''}`} onClick={() => { setSelectedPack(pk.id); setCurrentPage(1); }}>
+                {pk.name} <span style={{ opacity: 0.6 }}>({n})</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Filter Grid */}
         <div className="vf-filter-grid">
           <div className="vf-form-group" style={{ gridColumn: 'span 2' }}>
@@ -590,8 +626,10 @@ export const ProductList: React.FC<ProductListProps> = ({
               className="vf-btn vf-btn-sm vf-btn-secondary"
               onClick={handleBulkStatus}
               style={{ background: '#334155', color: '#fff', borderColor: '#475569' }}
+              disabled={!currentUser.permissions.canApproveProducts}
+              title={currentUser.permissions.canApproveProducts ? 'Approve selected products that are pending approval' : 'You do not have approval rights'}
             >
-              Set Active
+              Approve selected
             </button>
             <button
               type="button"
@@ -747,17 +785,20 @@ export const ProductList: React.FC<ProductListProps> = ({
                         >
                           📋
                         </button>
-                        {p.lifecycleStatus !== 'Retired' && (
+                        {availableActions(p, currentUser.permissions).filter((a) => a !== 'reject').map((a) => (
                           <button
+                            key={a}
                             type="button"
                             className="vf-btn vf-btn-sm"
-                            style={{ background: 'transparent', border: '1px solid #fecaca', color: '#dc2626' }}
-                            onClick={() => retireProduct(p.id)}
-                            title="Retire Product"
+                            style={a === 'retire'
+                              ? { background: 'transparent', border: '1px solid #fecaca', color: '#dc2626' }
+                              : { background: 'transparent', border: '1px solid #c7d2fe', color: '#4338ca' }}
+                            onClick={() => setLifecycle({ product: p, action: a })}
+                            title={a === 'submit' ? 'Submit for approval' : a === 'approve' ? 'Approve' : 'Retire product'}
                           >
-                            Retire
+                            {a === 'submit' ? 'Submit' : a === 'approve' ? 'Review' : 'Retire'}
                           </button>
-                        )}
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -810,6 +851,8 @@ export const ProductList: React.FC<ProductListProps> = ({
           </div>
         </div>
       </div>
+      {packsOpen && <IndustryPacksDrawer onClose={() => setPacksOpen(false)} />}
+      {lifecycle && <LifecycleDialog product={lifecycle.product} action={lifecycle.action} onClose={() => setLifecycle(null)} />}
     </div>
   );
 };

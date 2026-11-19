@@ -19,15 +19,27 @@ export const Topbar: React.FC<TopbarProps> = ({
   let pageTitle = 'Product Master';
   let modeTag = 'Universal Engine Mode';
 
-  if (location.pathname.startsWith('/gtm')) {
-    pageTitle = 'GTM Configuration';
-    modeTag = 'Commercial Principal Engine';
-  } else if (location.pathname.startsWith('/partners')) {
-    pageTitle = 'Partner Management';
-    modeTag = 'Commercial Distribution Registry';
-  } else if (location.pathname.startsWith('/branches')) {
+  if (location.pathname.startsWith('/branches')) {
     pageTitle = 'Branch Master';
     modeTag = 'Corporate Supply Infrastructure';
+  } else if (location.pathname.startsWith('/inventory')) {
+    pageTitle = 'Stock on Hand';
+    modeTag = 'Inventory Ledger';
+  } else if (location.pathname.startsWith('/data-import')) {
+    pageTitle = 'Data Import';
+    modeTag = 'Platform';
+  } else if (location.pathname.startsWith('/integrations')) {
+    pageTitle = 'Integration Hub';
+    modeTag = 'Platform';
+  } else if (location.pathname.startsWith('/pricing')) {
+    pageTitle = 'Price Lists & Rate Contracts';
+    modeTag = 'Commercial';
+  } else if (location.pathname.startsWith('/users')) {
+    pageTitle = 'Users & Roles';
+    modeTag = 'Platform';
+  } else if (location.pathname.startsWith('/modules')) {
+    pageTitle = 'Modules';
+    modeTag = 'Platform';
   } else if (location.pathname.startsWith('/warehouses')) {
     pageTitle = 'Warehouse Master';
     modeTag = 'Logistics & Depot Infrastructure';
@@ -37,8 +49,8 @@ export const Topbar: React.FC<TopbarProps> = ({
     alert(
       'VinFlux Principal Portal Architecture:\n\n' +
       '1. Product Master: Universal product definition, regulatory classification, dynamic attributes, and matrix variants. Safety thresholds define inventory policy.\n' +
-      '2. GTM Configuration: Multi-tier distribution path builder, channel margin rules, and territory-level commercial terms defaults.\n' +
-      '3. Partner Management: Strict statutory KYC verification, multi-territory commercial terms inheritance with partner overrides, and Distribution Portal invitation workflow.'
+      '2. Go-to-Market: territories, zones, sales channels, sales policies, partner onboarding (GSTIN + KYC), supply links, commercial terms with inheritance, credit, licences, partner portal and approvals.\n' +
+      '3. Branch & Warehouse Master: supply infrastructure used as stock sources in Go-to-Market.'
     );
   };
 

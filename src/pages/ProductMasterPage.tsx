@@ -17,7 +17,9 @@ interface ProductMasterPageProps {
 }
 
 export const ProductMasterPage: React.FC<ProductMasterPageProps> = ({ searchTerm = '' }) => {
-  const { selectedProductId, setSelectedProductId } = useApp();
+  const { selectedProductId, setSelectedProductId, currentUser, showToast } = useApp();
+  const canEdit = currentUser.permissions.canPublishProducts;
+  const denied = () => { showToast('Your role can view products but not create or edit them.', 'warning'); return false; };
 
   // View state: 'list' | 'detail' | 'configuration'
   const [currentView, setCurrentView] = useState<'list' | 'detail' | 'configuration'>('list');
@@ -37,11 +39,13 @@ export const ProductMasterPage: React.FC<ProductMasterPageProps> = ({ searchTerm
   };
 
   const handleEditProduct = (id: string) => {
+    if (!canEdit) { denied(); return; }
     setEditProductId(id);
     setIsFormDrawerOpen(true);
   };
 
   const handleCreateProduct = () => {
+    if (!canEdit) { denied(); return; }
     setEditProductId(null);
     setIsFormDrawerOpen(true);
   };
