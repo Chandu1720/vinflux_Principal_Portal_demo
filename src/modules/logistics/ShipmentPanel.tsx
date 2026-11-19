@@ -105,7 +105,7 @@ export const ShipForm: React.FC<{ o: Order; ctx: OrderCtx; destState?: string; o
 export const ShipmentCard: React.FC<{ o: Order; sh: Shipment; ctx: OrderCtx; canEdit: boolean; run: Run }> = ({ o, sh, ctx, canEdit, run }) => {
   const { currentUser } = useApp();
   const podOpt = optChoice('logistics', 'pod');
-  const [pod, setPod] = useState({ receivedBy: '', method: (podOpt === 'otp' ? 'OTP' : podOpt === 'photo' ? 'Photo' : 'Signature') as 'Signature' | 'Photo' | 'OTP' });
+  const [pod, setPod] = useState({ receivedBy: '', method: (podOpt === 'otp' ? 'OTP' : podOpt === 'photo' ? 'Photo' : podOpt === 'none' ? 'Not required' : 'Signature') as 'Signature' | 'Photo' | 'OTP' | 'Not required' });
   const [problem, setProblem] = useState<Record<number, { short: number; damaged: number }> | null>(null);
   const dest = destinationOf(o, ctx.partners);
   const late = !sh.deliveredAt && sh.eta < new Date().toISOString().slice(0, 10);
@@ -138,7 +138,7 @@ export const ShipmentCard: React.FC<{ o: Order; sh: Shipment; ctx: OrderCtx; can
       {canEdit && !sh.deliveredAt && (
         <div className="g2-row" style={{ gap: 8, marginTop: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 200 }}><Field label="Received by (proof of delivery)" hint={dest ? 'Stock is added to the receiver on delivery.' : 'Hospital sale — goods are consumed, not kept as stock.'}><Input value={pod.receivedBy} onChange={(e) => setPod({ ...pod, receivedBy: e.target.value })} placeholder="Name / stamp" /></Field></div>
-          <div style={{ width: 150 }}><Field label="Proof"><Select value={pod.method} options={['Signature', 'Photo', 'OTP'].map((x) => ({ value: x, label: x }))} onChange={(v) => setPod({ ...pod, method: v as typeof pod.method })} /></Field></div>
+          <div style={{ width: 150 }}><Field label="Proof"><Select value={pod.method} options={(podOpt === 'none' ? ['Not required', 'Signature', 'Photo', 'OTP'] : ['Signature', 'Photo', 'OTP']).map((x) => ({ value: x, label: x }))} onChange={(v) => setPod({ ...pod, method: v as typeof pod.method })} /></Field></div>
           <Button variant="primary" icon={<PackageCheck size={14} />} onClick={() => run(deliverShipment(o.id, sh.id, pod.receivedBy, pod.method, ctx.partners, currentUser.name))}>Mark delivered</Button>
         </div>
       )}

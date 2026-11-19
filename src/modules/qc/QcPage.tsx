@@ -8,6 +8,7 @@ import { CheckCircle2, ClipboardCheck, PauseCircle, ShieldCheck, Undo2 } from 'l
 import { Alert, Badge, Button, Card, ErrorList, Field, FormGrid, Input, KpiCard, Modal, MultiSelect, NumberInput, PageHeader, Segmented, Select, Switch, Tabs, Textarea } from '../../platform/ui';
 import type { BadgeTone } from '../gtm-v2/types';
 import { useSubscribe } from '../../platform/useStore';
+import { opt } from '../../platform/moduleOptions';
 import { useApp } from '../../context/AppContext.tsx';
 import { useOrderCtx } from '../orders/useOrderCtx';
 import { ensureProcurementDemo, subscribeProcurement } from '../procurement/procurementStore';
@@ -134,6 +135,7 @@ const QcPage: React.FC = () => {
   return (
     <div className="g2 g2-embed">
       <PageHeader title="Quality Control" description="Everything in Quarantine — purchase receipts, imports and partner returns — inspected against a plan and released by a second person. Only accepted goods become sellable." />
+      {(!opt('inventory', 'quarantine') || !opt('procurement', 'inspection')) && <Alert tone="warn">Receipts are not held for inspection — {!opt('inventory', 'quarantine') ? 'Inventory → “Quarantine until QC accepts receipts”' : 'Procurement → “Inspect receipts before stock is sellable”'} is off in Modules, so purchased goods become sellable on receipt. Returns still come here.</Alert>}
       <div className="g2-grid g2-grid-4" style={{ marginBottom: 16 }}>
         <KpiCard label="To inspect" value={all.filter((i) => i.status === 'To inspect').length} icon={<ClipboardCheck size={22} />} color="#d97706" bg="#fffbeb" foot={`${units('To inspect')} unit(s) in Quarantine`} />
         <KpiCard label="Awaiting release" value={all.filter((i) => i.status === 'Awaiting release').length} icon={<ShieldCheck size={22} />} color="#2563eb" bg="#eff6ff" foot={canRelease ? 'you can release' : 'QC approver needed'} />

@@ -6,6 +6,7 @@ import type { Partner } from '../gtm-v2/types';
 import { createOrder, getOrder, routeOf } from './orderStore';
 import type { OrderCtx } from './orderStore';
 import { priceLine, rememberAliases, shipFromFor } from './intake';
+import { routeOrder, supplierOf } from './routing';
 import { channelOpen } from './orderSettings';
 import {
   detectPartner, duplicateOf, guessColumns, headerRow, matchLine, poMeta, readOrderFile, rememberColumns, rememberPartnerCodes, samplePdf, savedColumns, tableLines, textLines,
@@ -94,6 +95,12 @@ export const UploadOrderModal: React.FC<{ ctx: OrderCtx; onClose: () => void; on
     const e: string[] = [];
     if (!partner) e.push('Choose the partner the order is from.');
     if (blockedChannel) e.push(blockedChannel);
+    // GTM-04: a partner that buys through a distributor — route the uploaded order to that distributor as demand.
+    if (partner && route && !route.ok && supplierOf(partner.id, ctx) && doc && rows.every((r) => r.match)) {
+      const rr = routeOrder({ principalId: activePrincipal.id, from: partner, source: doc.kind === 'PDF' ? 'PDF' : 'Excel', poNumber: meta.po.trim(), by: currentUser.name,
+        lines: rows.map((r) => { const pr = ctx.products.find((x) => x.id === r.match!.productId); return { productId: r.match!.productId, name: pr?.name ?? r.name, qty: r.qty, unitValue: r.price ?? (pr?.pricingReference?.mrp ?? 0) * 0.7 }; }) }, ctx);
+      if (rr.ok) { showToast(rr.message, 'success'); onClose(); return; }
+    }
     if (route && !route.ok) e.push(route.text);
     if (!meta.po.trim()) e.push('PO number is required.');
     if (dup) e.push(`PO ${meta.po} from ${partner?.name} is already order ${dup.code} (${dup.status}). Change the PO number if this is a different order.`);

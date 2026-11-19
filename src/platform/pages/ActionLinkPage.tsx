@@ -13,6 +13,39 @@ import { useOrderCtx } from '../../modules/orders/useOrderCtx';
 import { answerPartFill, approveOrder, getOrder, orderValue, rejectOrder } from '../../modules/orders/orderStore';
 import { decideClaim, getClaim, getScheme } from '../../modules/claims/claimsStore';
 import { acknowledgePO, getPO } from '../../modules/procurement/procurementStore';
+import { getProposal, respondProposal } from '../../modules/replenishment/replenishmentStore';
+import type { OrderCtx } from '../../modules/orders/orderStore';
+
+/** Partner answers a suggested order: accept as is, change quantities, or reject. */
+const ReplAnswer: React.FC<{ id: string; ctx: OrderCtx | null; finish: (r: { ok: boolean; message: string }, by: string, result: string) => void }> = ({ id, ctx, finish }) => {
+  const p = getProposal(id);
+  const [qty, setQty] = useState<Record<string, number>>(() => Object.fromEntries((p?.lines ?? []).map((l) => [l.productId, l.qty])));
+  const [why, setWhy] = useState('');
+  const [err, setErr] = useState('');
+  if (!p) return <Alert tone="warn">This suggestion no longer exists.</Alert>;
+  if (p.status !== 'Sent') return <Alert tone="warn">This suggestion is no longer open (now: {p.status}).</Alert>;
+  const changed = p.lines.some((l) => (qty[l.productId] ?? 0) !== l.qty);
+  const go = (accept: boolean) => { const r = respondProposal(p.id, accept, qty, why, `${p.partnerName} (via email link)`, 'Partner link', ctx); if (!r.ok) setErr(r.errors?.[0] ?? r.message); else finish(r, p.partnerName, accept ? `Accepted → ${getProposal(p.id)?.orderCode}` : 'Rejected'); };
+  return (
+    <>
+      <Card>
+        <table className="g2-table"><thead><tr><th>Product</th><th style={{ textAlign: 'right' }}>Your stock</th><th style={{ textAlign: 'right' }}>Selling / day</th><th style={{ width: 120, textAlign: 'right' }}>Order qty</th></tr></thead>
+          <tbody>{p.lines.map((l) => <tr key={l.productId}><td>{l.name}</td><td style={{ textAlign: 'right' }}>{l.stock}</td><td style={{ textAlign: 'right' }}>{l.avgDaily}</td>
+            <td><input className="g2-input" type="number" min={0} style={{ textAlign: 'right' }} value={qty[l.productId] ?? 0} onChange={(e) => setQty({ ...qty, [l.productId]: Math.max(0, Number(e.target.value) || 0) })} /></td></tr>)}</tbody>
+        </table>
+        <div className="g2-small g2-muted" style={{ marginTop: 6 }}>Suggested so you hold about {p.lines[0]?.targetDays} days of stock. Change any quantity before you accept; prices and checks are applied as for any order.</div>
+      </Card>
+      {err && <Alert tone="warn">{err}</Alert>}
+      <Card>
+        <Field label="Reason (required to reject)"><Textarea rows={2} value={why} onChange={(e) => setWhy(e.target.value)} /></Field>
+        <div className="g2-row" style={{ gap: 8, marginTop: 12 }}>
+          <Button variant="danger" onClick={() => go(false)}>Reject</Button>
+          <Button variant="primary" icon={<CheckCircle2 size={15} />} disabled={!ctx} onClick={() => go(true)}>{changed ? 'Place order with my quantities' : 'Accept and place order'}</Button>
+        </div>
+      </Card>
+    </>
+  );
+};
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 /** The person behind an approval level (first active user with that role). */
@@ -98,6 +131,18 @@ const ActionLinkPage: React.FC = () => {
             <Button onClick={() => choose('wait', 'Wait for the complete order')}>Wait and ship the complete order</Button>
           </div>
         )}
+        {footer}
+      </Shell>
+    );
+  }
+
+  /* ---------------- Partner answers a suggested order ---------------- */
+  if (link.kind === 'repl-respond') {
+    const p = getProposal(link.refId);
+    return (
+      <Shell title={p ? `Suggested order ${p.no}` : 'Suggested order'}>
+        {p && <div className="g2-small">For <strong>{p.partnerName}</strong> · based on your stock and sales</div>}
+        <ReplAnswer id={link.refId} ctx={ctx} finish={finish} />
         {footer}
       </Shell>
     );

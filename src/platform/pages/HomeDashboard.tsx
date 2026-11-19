@@ -23,6 +23,7 @@ import { returns, subscribeReturns } from '../../modules/returns/returnStore';
 import { complaints, recalls, subscribeRecall } from '../../modules/recall/recallStore';
 import { ageing, allTasks, subscribeCollections } from '../../modules/collections/collectionsStore';
 import { inspections as qcInspections, subscribeQc } from '../../modules/qc/qcStore';
+import { replStats, subscribeReplenishment } from '../../modules/replenishment/replenishmentStore';
 import { incoming as impIncoming, missingDocs, shipments as impShipments, subscribeImports } from '../../modules/imports/importsStore';
 import { grns as procGrns, pos as procPos, subscribeProcurement, vendorInvoices } from '../../modules/procurement/procurementStore';
 
@@ -34,8 +35,8 @@ interface Tile { label: string; value: React.ReactNode; foot?: string; tone?: Ba
 interface Section { module: ModuleId; title: string; path: string; tiles: Tile[] }
 interface Attention { text: string; count: number; path: string; tone: BadgeTone }
 
-const HomeDashboard: React.FC = () => {
-  useSubscribe(subscribeOrders, subscribeStock, subscribeSecondary, subscribeClaims, subscribeCrm, subscribeSurgical, subscribeReturns, subscribeRecall, subscribeCollections, subscribeProcurement, subscribeImports, subscribeQc);
+const HomeDashboard: React.FC<{ embedded?: boolean }> = ({ embedded }) => {
+  useSubscribe(subscribeOrders, subscribeStock, subscribeSecondary, subscribeClaims, subscribeCrm, subscribeSurgical, subscribeReturns, subscribeRecall, subscribeCollections, subscribeProcurement, subscribeImports, subscribeQc, subscribeReplenishment);
   const { enabled } = usePlatform();
   const navigate = useNavigate();
   const { activePrincipal, products, currentUser } = useApp();
@@ -103,6 +104,15 @@ const HomeDashboard: React.FC = () => {
       ] });
       need(true, 'Import shipments at port waiting for clearance', port, '/imports');
       need(true, 'Import shipments missing documents', miss, '/imports', 'red');
+    }
+    if (enabled('replenishment')) {
+      const r = replStats(pid);
+      sections.push({ module: 'replenishment', title: 'Replenishment', path: '/replenishment', tiles: [
+        { label: 'Waiting for partner', value: r.waiting },
+        { label: 'Prepared, not sent', value: r.drafts, tone: r.drafts ? 'amber' : undefined },
+        { label: 'Accepted this month', value: r.acceptedMonth, foot: r.acceptRate === null ? undefined : `${r.acceptRate}% acceptance` },
+      ] });
+      need(true, 'Suggested orders prepared but not sent', r.drafts, '/replenishment?tab=sent');
     }
     if (enabled('qc')) {
       const qi = qcInspections(pid); const n = (st: string) => qi.filter((x) => x.status === st).length;
@@ -207,7 +217,7 @@ const HomeDashboard: React.FC = () => {
 
   return (
     <div className="g2 g2-embed">
-      <PageHeader title={`Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, ${currentUser.name.split(' ').slice(-2)[0]}`} description={<>{activePrincipal.name} — everything that needs you, across the modules switched on.</>} />
+      {!embedded && <PageHeader title={`Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, ${currentUser.name.split(' ').slice(-2)[0]}`} description={<>{activePrincipal.name} — everything that needs you, across the modules switched on.</>} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 360px', gap: 16, alignItems: 'start' }}>
         <div className="g2-stack" style={{ gap: 16 }}>
           {data.sections.length === 0 && <Card><div className="g2-muted">No operational modules are switched on yet. Start with the <a href="/setup">Setup checklist</a>.</div></Card>}

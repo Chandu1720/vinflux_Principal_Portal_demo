@@ -172,6 +172,9 @@ export interface KitComponent {
   qty: number;
 }
 
+export type SupplyModel = 'Bought finished' | 'White-label / contract made' | 'Imported' | 'Assembled from parts' | 'Own plant abroad' | 'Own plant (ERP runs production)';
+export const SUPPLY_MODELS: SupplyModel[] = ['Bought finished', 'White-label / contract made', 'Imported', 'Assembled from parts', 'Own plant abroad', 'Own plant (ERP runs production)'];
+
 export interface Product {
   id: string;
   name: string;
@@ -182,6 +185,8 @@ export interface Product {
   subCategoryId: string;
   principalId: string;
   brand: string;
+  /** How the principal gets this product (decides documents, checks and traceability). Missing = bought finished. */
+  supplyModel?: SupplyModel;
   productTypeId: string;
   baseUom: string;
   lifecycleStatus: 'Active' | 'Draft' | 'Pending Approval' | 'Retired';

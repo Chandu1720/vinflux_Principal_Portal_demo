@@ -20,7 +20,11 @@ export type PlatformEventType =
   | 'secondary.accepted'
   | 'claim.settled'
   | 'payment.recorded'
-  | 'qc.released';
+  | 'qc.released'
+  | 'replenishment.answered'
+  | 'tender.awarded'
+  | 'order.routed'
+  | 'invoice.issued';
 
 export interface PlatformEvent {
   id: string;
@@ -40,7 +44,7 @@ export const getEventLog = (): PlatformEvent[] => loadJson<PlatformEvent[]>(KEY,
 
 export const emit = (type: PlatformEventType, source: string, by: string, summary: string, data?: Record<string, unknown>) => {
   const e: PlatformEvent = { id: newId('evt'), type, at: new Date().toISOString(), by, source, summary, data };
-  saveJson(KEY, [e, ...getEventLog()].slice(0, 200));
+  saveJson(KEY, [e, ...getEventLog()].slice(0, 2000));
   [...(handlers.get(type) ?? []), ...(handlers.get('*') ?? [])].forEach((h) => { try { h(e); } catch { /* a subscriber must never break the publisher */ } });
   return e;
 };

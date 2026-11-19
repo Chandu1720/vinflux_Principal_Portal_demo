@@ -12,6 +12,8 @@ import type {
   LicenceType,
   KitComponent
 } from '../../types/product.ts';
+import { SUPPLY_MODELS } from '../../types/product.ts';
+import type { SupplyModel } from '../../types/product.ts';
 import { gtinError, nextGtin13, normalise, packGtin14, usedGtins } from '../../utils/gs1.ts';
 import { ComplianceForm } from './ComplianceFields.tsx';
 import { checkProduct, licenceFormFor, packOf, todayISO } from '../../utils/productLifecycle.ts';
@@ -561,6 +563,7 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
         subCategoryId: formData.subCategoryId || availableSubCategories[0]?.id || '',
         principalId: formData.principalId || activePrincipal.name,
         brand: formData.brand || '',
+        supplyModel: (formData.supplyModel as SupplyModel) || 'Bought finished',
         productTypeId: formData.productTypeId || 'type-implant',
         baseUom: formData.baseUom || 'Each',
         lifecycleStatus: finalStatus,
@@ -785,6 +788,14 @@ export const ProductFormDrawer: React.FC<ProductFormDrawerProps> = ({
                       ))}
                     </select>
                     <span style={{ fontSize: 11.5, color: 'var(--vf-slate-500)' }}>Industry pack: <strong>{industryPacks.find((x) => x.id === pack)?.name}</strong> — decides the regulatory fields and checks.</span>
+                  </div>
+
+                  <div className="vf-form-group">
+                    <label className="vf-label">Supply model</label>
+                    <select className="vf-input" value={formData.supplyModel || 'Bought finished'} onChange={(e) => setFormData({ ...formData, supplyModel: e.target.value as SupplyModel })}>
+                      {SUPPLY_MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <span style={{ fontSize: 11.5, color: 'var(--vf-slate-500)' }}>Decides the documents and checks: imports need a bill of entry and import licence; contract-made goods need the maker’s licence and CoA; own-plant stock comes from the ERP.</span>
                   </div>
 
                   <div className="vf-form-group">

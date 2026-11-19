@@ -7,7 +7,7 @@
  */
 import { loadJson, saveJson } from './store';
 
-export type LinkKind = 'order-approve' | 'order-partfill' | 'claim-decide' | 'po-ack';
+export type LinkKind = 'order-approve' | 'order-partfill' | 'claim-decide' | 'po-ack' | 'repl-respond';
 export interface ActionLink {
   token: string; kind: LinkKind; refId: string; principalId: string;
   /** Who it was sent to: an approval level (role) or a partner. */

@@ -54,7 +54,7 @@ export interface Shipment {
   id: string; no: string; allocations: Allocation[];
   invoiceNo: string; invoiceDate: string; irn: string; ewayBill: string | null;
   carrier: string; awb: string; dispatchedAt: string; eta: string;
-  deliveredAt: string | null; pod: { receivedBy: string; method: 'Signature' | 'Photo' | 'OTP' } | null;
+  deliveredAt: string | null; pod: { receivedBy: string; method: 'Signature' | 'Photo' | 'OTP' | 'Not required' } | null;
   problem: { shortQty: number; damagedQty: number; claimNos: string[]; at: string } | null;
   /** Logistics details. */
   tripNo?: string | null; vehicleNo?: string; driver?: string; packages?: number; weightKg?: number; freight?: number;
@@ -243,7 +243,18 @@ export const evaluate = (o: Order, ctx: OrderCtx): Check[] => {
   out.push({ id: 'stock', label: 'Stock (with shelf life)', state: short.length ? 'warn' : 'pass', detail: short.length ? `Short at ${o.shipFrom.name || 'ship-from'}: ${short.map((l) => l.name).join(', ')} — part-confirm, backorder or substitute` : `Available at ${o.shipFrom.name}` });
   const free = o.lines.filter((l) => l.freeQty > 0);
   if (free.length) out.push({ id: 'scheme', label: 'Scheme', state: 'pass', detail: free.map((l) => `${l.name}: ${l.freeQty} free`).join('; ') });
+  extraChecks.forEach((f) => { const c = f(o, ctx); if (c) out.push(c); });
   return out;
+};
+/** Invoice numbering per GSTIN and financial year, plugged in by Invoicing when VinFlux issues the tax invoice. */
+let invoiceNumberer: ((o: Order, ctx: OrderCtx) => string | null) | null = null;
+export const setInvoiceNumberer = (f: ((o: Order, ctx: OrderCtx) => string | null) | null) => { invoiceNumberer = f; };
+/** Checks contributed by other modules (e.g. channel agreements) — registered at start-up, run on every order. */
+const extraChecks: ((o: Order, ctx: OrderCtx) => Check | null)[] = [];
+export const setOrderCheck = (id: string, f: ((o: Order, ctx: OrderCtx) => Check | null) | null) => {
+  const i = extraChecks.findIndex((x) => (x as unknown as { _id?: string })._id === id);
+  if (i >= 0) extraChecks.splice(i, 1);
+  if (f) { (f as unknown as { _id: string })._id = id; extraChecks.push(f); }
 };
 export const verdict = (checks: Check[]): 'Blocked' | 'Needs approval' | 'Ready' =>
   checks.some((c) => c.state === 'fail') ? 'Blocked' : checks.some((c) => c.state === 'hold') ? 'Needs approval' : 'Ready';
@@ -579,15 +590,16 @@ export const createShipment = (id: string, qty: Record<string, number>, info: Sh
     allocations = r.allocations;
   }
   const cnf = o.shipFrom.locType === 'CNF';
-  if (src === 'ERP' && !cnf && o.erpRef && !info.invoiceNo?.trim()) return { ok: false, message: `Bill the sales order in ${erpProfile(o.erpRef.connector)?.name ?? 'the ERP'} first, then fetch the invoice here.`, errors: o.erpRef.status !== 'Sent' ? ['The sales order has not reached the ERP yet — retry sending it from the order.'] : [] };
-  const invoiceBy: Shipment['invoiceBy'] = cnf ? 'C&F' : src === 'ERP' ? 'ERP' : src === 'VINFLUX' ? 'VinFlux' : info.invoiceNo?.trim() ? 'Manual' : 'VinFlux';
+  const vfInvoices = optChoice('orders', 'invoicing') === 'vinflux';
+  if (src === 'ERP' && !cnf && !vfInvoices && o.erpRef && !info.invoiceNo?.trim()) return { ok: false, message: `Bill the sales order in ${erpProfile(o.erpRef.connector)?.name ?? 'the ERP'} first, then fetch the invoice here.`, errors: o.erpRef.status !== 'Sent' ? ['The sales order has not reached the ERP yet — retry sending it from the order.'] : [] };
+  const invoiceBy: Shipment['invoiceBy'] = cnf ? 'C&F' : vfInvoices && !info.invoiceNo?.trim() ? 'VinFlux' : src === 'ERP' ? 'ERP' : src === 'VINFLUX' ? 'VinFlux' : info.invoiceNo?.trim() ? 'Manual' : 'VinFlux';
   const d = db();
   const n = d.shipSeq + 1;
   const value = allocations.reduce((a, x) => { const l = o.lines.find((y) => y.id === x.lineId)!; return a + (l.netUnit ?? 0) * x.qty * (1 + l.gstPct / 100); }, 0);
   const prefix = invoiceBy === 'C&F' ? 'CNF' : invoiceBy === 'ERP' ? 'INV' : 'VF-INV';
   const sh: Shipment = {
     id: newId('shp'), no: `SHP-26-${String(n).padStart(4, '0')}`, allocations,
-    invoiceNo: info.invoiceNo?.trim() || (invoiceBy === 'ERP' ? erpDocNo(masterOf(o.shipFrom.id, { warehouses: ctx.warehouses ?? [] }), 'INV', n) : `${prefix}-26-${String(7000 + n)}`), invoiceDate: today(),
+    invoiceNo: info.invoiceNo?.trim() || (invoiceBy === 'ERP' ? erpDocNo(masterOf(o.shipFrom.id, { warehouses: ctx.warehouses ?? [] }), 'INV', n) : (((invoiceBy === 'VinFlux' || invoiceBy === 'C&F') && invoiceNumberer?.(o, ctx)) || `${prefix}-26-${String(7000 + n)}`)), invoiceDate: today(),
     irn: o.erpRef ? (info.irn ?? '') : Array.from({ length: 4 }, (_, i) => ((Date.now() / (i + 7)) % 1e8).toString(16).replace('.', '').slice(0, 8)).join(''),
     ewayBill: o.erpRef ? (info.ewayBill ?? null) : value > 50000 ? `EWB-${String(Math.floor(Date.now() / 1000) + n).slice(-10)}` : null,
     carrier: info.carrier, awb: info.awb, dispatchedAt: now(), eta: new Date(Date.now() + info.etaDays * 86400000).toISOString().slice(0, 10), deliveredAt: null, pod: null, problem: null,
@@ -624,11 +636,11 @@ export const destinationOf = (o: Order, partners: Partner[]): LocType | null => 
 };
 
 /** Proof of delivery. When every shipment is delivered the order is Completed. */
-export const deliverShipment = (id: string, shipmentId: string, receivedBy: string, method: 'Signature' | 'Photo' | 'OTP', partners: Partner[], by: string): Result => {
+export const deliverShipment = (id: string, shipmentId: string, receivedBy: string, method: 'Signature' | 'Photo' | 'OTP' | 'Not required', partners: Partner[], by: string): Result => {
   const o = getOrder(id);
   const sh = o?.shipments.find((s) => s.id === shipmentId);
   if (!o || !sh || sh.deliveredAt) return { ok: false, message: 'Shipment not found or already delivered.' };
-  if (!receivedBy.trim()) return { ok: false, message: 'Who received the goods? (name on the proof of delivery)' };
+  if (!receivedBy.trim() && method !== 'Not required') return { ok: false, message: 'Who received the goods? (name on the proof of delivery)' };
   const dest = destinationOf(o, partners);
   post(sh.allocations.flatMap((a) => {
     const base = { bin: '', productId: a.productId, variantSku: a.variantSku, batch: a.batch, serial: a.serial, mfgDate: a.mfgDate, expiryDate: a.expiryDate, unitCost: a.unitCost, importId: null, by, refId: o.id, status: 'Available' as const };

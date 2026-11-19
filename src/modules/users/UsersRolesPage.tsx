@@ -4,13 +4,15 @@ import {
   Alert, Badge, Button, Card, Checkbox, ErrorList, Field, FormGrid, FormSection, Input, KpiCard, Modal, MultiSelect, PageHeader, SearchInput, Select, Tabs, Textarea,
 } from '../../platform/ui';
 import { useSubscribe } from '../../platform/useStore';
+import { usePlatform } from '../../platform/PlatformContext';
+import type { ModuleId } from '../../platform/modules';
 import { useApp } from '../../context/AppContext.tsx';
 import { usePartners, useTerritories } from '../gtm-v2/hooks/useGtmData';
 import { portalStatus } from '../gtm-v2/utils/health';
 import { initialPrincipals } from '../../data/productMasterData.ts';
 import type { PermAction } from '../../types/product.ts';
 import {
-  ACTION_LABEL, RESOURCES, blankUser, deleteRole, hasPerm, matrixOf, roles as listRoles, saveRole, saveUser, subscribeUsers, users as listUsers,
+  ACTION_LABEL, RESOURCES, ROLE_MODULE, blankUser, deleteRole, hasPerm, matrixOf, roles as listRoles, saveRole, saveUser, subscribeUsers, users as listUsers,
 } from './userStore';
 import type { AppUser, Role } from './userStore';
 
@@ -32,6 +34,7 @@ const MatrixView: React.FC<{ matrix: Role['matrix'] }> = ({ matrix }) => (
 /* --------------------------------- User drawer --------------------------------- */
 
 const UserDrawer: React.FC<{ user: AppUser; onClose: () => void; readOnly: boolean }> = ({ user, onClose, readOnly }) => {
+  const { enabled } = usePlatform();
   const { currentUser, warehouses, showToast } = useApp();
   const territories = useTerritories().data ?? [];
   const [u, setU] = useState<AppUser>(user);
@@ -63,11 +66,11 @@ const UserDrawer: React.FC<{ user: AppUser; onClose: () => void; readOnly: boole
         </FormSection>
         <FormSection title="Roles" description={self ? 'You can’t change your own roles — another administrator must do it.' : 'A user can hold several roles; permissions add up.'}>
           <div className="g2-grid g2-grid-2">
-            {listRoles().filter((r) => r.kind === 'Staff').map((r) => (
-              <div key={r.id} className="g2-card" style={{ padding: 10 }}>
+            {listRoles().filter((r) => r.kind === 'Staff' && (!ROLE_MODULE[r.id] || enabled(ROLE_MODULE[r.id] as ModuleId) || u.roleIds.includes(r.id))).map((r) => (
+              <div key={r.id} className="g2-card" style={{ padding: 10, opacity: ROLE_MODULE[r.id] && !enabled(ROLE_MODULE[r.id] as ModuleId) ? 0.6 : 1 }}>
                 <Checkbox checked={u.roleIds.includes(r.id)} disabled={readOnly || self}
                   onChange={(v) => set('roleIds', v ? [...u.roleIds, r.id] : u.roleIds.filter((x) => x !== r.id))}
-                  label={<span><strong>{r.name}</strong><br /><span className="g2-small g2-muted">{r.description}</span></span>} />
+                  label={<span><strong>{r.name}</strong>{ROLE_MODULE[r.id] && !enabled(ROLE_MODULE[r.id] as ModuleId) && <> <Badge tone="slate">module off</Badge></>}<br /><span className="g2-small g2-muted">{r.description}</span></span>} />
               </div>
             ))}
           </div>
@@ -146,6 +149,7 @@ const RoleEditor: React.FC<{ role: Role; readOnly: boolean; onDone: () => void }
 /* ----------------------------------- Page ----------------------------------- */
 
 const UsersRolesPage: React.FC = () => {
+  const { enabled } = usePlatform();
   useSubscribe(subscribeUsers);
   const { currentUser, signInAs, warehouses, workspace } = useApp();
   const territories = useTerritories().data ?? [];
@@ -213,7 +217,7 @@ const UsersRolesPage: React.FC = () => {
               {roles.map((r) => (
                 <button key={r.id} type="button" className="g2-card" onClick={() => { setNewRole(null); setRoleId(r.id); }}
                   style={{ padding: 10, textAlign: 'left', cursor: 'pointer', borderColor: !newRole && activeRole.id === r.id ? 'var(--g2-primary)' : undefined }}>
-                  <div className="g2-row" style={{ gap: 6 }}><strong style={{ fontSize: 13 }}>{r.name}</strong>{r.kind === 'Partner' && <Badge tone="blue">Portal</Badge>}</div>
+                  <div className="g2-row" style={{ gap: 6 }}><strong style={{ fontSize: 13 }}>{r.name}</strong>{r.kind === 'Partner' && <Badge tone="blue">Portal</Badge>}{ROLE_MODULE[r.id] && !enabled(ROLE_MODULE[r.id] as ModuleId) && <Badge tone="slate">module off</Badge>}</div>
                   <div className="g2-cell-sub">{users.filter((u) => u.roleIds.includes(r.id)).length} user(s)</div>
                 </button>
               ))}

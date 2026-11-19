@@ -16,7 +16,7 @@ export type ListType = 'CHANNEL' | 'PARTNER' | 'CONTRACT';
 export type ListStatus = 'Draft' | 'Pending' | 'Active' | 'Superseded' | 'Rejected';
 
 export interface Slab { minQty: number; price: number }
-export interface PriceLine { id: string; productId: string; price: number; slabs: Slab[] }
+export interface PriceLine { id: string; productId: string; price: number; slabs: Slab[]; /** Rate contracts: quantity the buyer committed to for the contract period (PRC-07). */ contractQty?: number | null }
 
 export interface PriceList {
   id: string;

@@ -1,3 +1,4 @@
+import { contractUsage } from './contractUsage';
 import React, { useMemo, useState } from 'react';
 import { CopyPlus, ListPlus, Percent, Trash2, X } from 'lucide-react';
 import { ProductPicker } from './ProductPicker';
@@ -32,6 +33,7 @@ export const PriceListDrawer: React.FC<{ list: PriceList; onClose: () => void; o
   const editable = ['Draft', 'Rejected'].includes(l.status) && !!perms.canEditPricing;
   const canApprove = l.status === 'Pending' && !!perms.canApprovePricing;
   /** Price checks + (for national channel lists) the ladder against the other channels' current prices. */
+  const usage = l.type === 'CONTRACT' ? contractUsage(l) : [];
   const issues = useMemo(() => {
     const base = checkList(l, products);
     if (l.type !== 'CHANNEL' || l.territoryIds.length || !l.channelId) return base;
@@ -143,7 +145,7 @@ export const PriceListDrawer: React.FC<{ list: PriceList; onClose: () => void; o
             </div>
           )}
           <div className="g2-table-wrap"><table className="g2-table">
-            <thead><tr><th>Product</th><th style={{ width: 140 }}>Price (ex-GST)</th><th>Quantity slabs</th><th style={{ textAlign: 'right' }}>Incl. GST</th><th style={{ textAlign: 'right' }}>MRP</th><th>Checks</th>{editable && <th />}</tr></thead>
+            <thead><tr><th>Product</th><th style={{ width: 140 }}>Price (ex-GST)</th>{l.type === 'CONTRACT' && <th style={{ width: 150 }}>Contracted qty · used</th>}<th>Quantity slabs</th><th style={{ textAlign: 'right' }}>Incl. GST</th><th style={{ textAlign: 'right' }}>MRP</th><th>Checks</th>{editable && <th />}</tr></thead>
             <tbody>
               {l.lines.length === 0 && <tr><td colSpan={7} className="g2-muted">No products yet.{editable ? ' Click “Add products” to pick all products or drill down by portfolio — or import a price file in Data Import.' : ''}</td></tr>}
               {groups.map((g) => (<React.Fragment key={g.id}>
@@ -156,6 +158,7 @@ export const PriceListDrawer: React.FC<{ list: PriceList; onClose: () => void; o
                   <tr key={ln.id}>
                     <td><div className="g2-strong" style={{ maxWidth: 280 }}>{p?.name ?? ln.productId}</div><div className="g2-cell-sub">{p?.code} · GST {gst}%</div></td>
                     <td>{editable ? <NumberInput value={ln.price || null} onChange={(v) => setLine(ln.id, { price: v ?? 0 })} aria-label={`Price ${p?.code}`} /> : <span className="g2-strong">{inr(ln.price)}</span>}</td>
+                    {l.type === 'CONTRACT' && <td>{editable ? <NumberInput value={ln.contractQty ?? null} allowEmpty placeholder="no limit" onChange={(v) => setLine(ln.id, { contractQty: v })} aria-label={`Contracted ${p?.code}`} /> : ln.contractQty ? (() => { const u = usage.find((x) => x.productId === ln.productId); return <span><strong>{u?.used ?? 0}</strong> / {ln.contractQty}{u && <span style={{ marginLeft: 6, color: u.pct >= 100 ? '#b91c1c' : u.pct >= 80 ? '#b45309' : '#047857', fontWeight: 600 }}>{u.pct}%</span>}</span>; })() : <span className="g2-muted">no limit</span>}</td>}
                     <td>
                       <div className="g2-row" style={{ gap: 4, flexWrap: 'wrap' }}>
                         {ln.slabs.map((s, i) => (

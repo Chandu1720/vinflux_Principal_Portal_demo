@@ -207,3 +207,6 @@ export const deleteRole = (id: string): string | null => {
 };
 
 export const blankUser = (workspace: IndustryPackId): AppUser => ({ id: '', name: '', email: '', phone: '', title: '', roleIds: [], status: 'Active', principalIds: [], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '', createdBy: '', workspace });
+
+/** Roles that only make sense when a module is on — hidden from new assignments while it is off. */
+export const ROLE_MODULE: Record<string, string> = { 'role-sales-exec': 'crm', 'role-qc-inspector': 'qc', 'role-qc-approver': 'qc', 'role-warehouse': 'inventory' };

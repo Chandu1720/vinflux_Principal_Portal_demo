@@ -15,6 +15,7 @@ import { flowCoverage } from '../../utils/flow';
 import { expandWithDescendants } from '../../utils/territory';
 import { formatDate } from '../../utils/format';
 import type { BadgeTone, Partner } from '../../types';
+import { ChannelOpsStrip } from '../../../../platform/ChannelOpsStrip';
 
 const TONE_COLOR: Record<BadgeTone, string> = {
   green: '#059669', amber: '#d97706', red: '#dc2626', blue: '#2563eb', purple: '#7c3aed', slate: '#94a3b8', cyan: '#0891b2',
@@ -110,6 +111,8 @@ const DashboardPage: React.FC = () => {
         <KpiCard label="Active Partners" value={activePartners} icon={<Users size={22} />} color="#059669" bg="#ecfdf5"
           foot={`${b.partners.length - activePartners} in other states`} onClick={() => navigate(ROUTES.partners)} />
       </div>
+
+      <ChannelOpsStrip partners={b.partners} />
 
       <div className="g2-grid g2-grid-main">
         <Card
