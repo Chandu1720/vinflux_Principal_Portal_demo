@@ -11,7 +11,7 @@ import { CONNECTORS, connectorSettings } from '../../platform/integrations/conne
 import { masterOf, sourceOf } from '../../platform/integrations/stockSync';
 import { balances, movements, subscribeStock } from './stockStore';
 import {
-  SOURCE_HINT, SOURCE_LABEL, adjustments, decideAdjustment, goodsReceipt, requestAdjustment, setDefaultSource, setStaleHours, setWarehouseSource, settingOf, sourceSettings, subscribeSource,
+  SOURCE_HINT, SOURCE_LABEL, adjustments, decideAdjustment, goodsReceipt, requestAdjustment, setDefaultSource, setStaleHours, setStockConnector, setWarehouseSource, settingOf, sourceSettings, subscribeSource,
 } from './stockSource';
 import type { Adjustment, ReceiptInput, SourceSetting, StockSource } from './stockSource';
 
@@ -43,7 +43,8 @@ export const SourceSettingsTab: React.FC<{ canConfigure: boolean }> = ({ canConf
         {(['ERP', 'VINFLUX', 'NONE'] as StockSource[]).map((s) => <Card key={s} title={<SourceBadge s={s} />}><div className="g2-small">{SOURCE_HINT[s]}</div></Card>)}
       </div>
       <FormGrid>
-        <Field label="Default for all warehouses" hint="Warehouses without their own setting follow this."><Select value={st.defaultSource} disabled={!canConfigure} options={SETTING_OPTS} onChange={(v) => { setDefaultSource(v as SourceSetting); showToast('Default stock source saved.', 'success'); }} /></Field>
+        <Field label="Stock source for this principal" hint={st.perWarehouseEnabled ? 'Warehouses without their own setting follow this.' : 'One source for all warehouses and C&F stock.'}><Select value={st.defaultSource} disabled={!canConfigure} options={SETTING_OPTS} onChange={(v) => { setDefaultSource(v as SourceSetting); showToast('Stock source saved.', 'success'); }} /></Field>
+        <Field label="ERP connector supplying the stock" hint="One connector covers every warehouse it maps."><Select value={st.connectorId ?? ''} disabled={!canConfigure} placeholder="Any enabled connector" options={CONNECTORS.filter((c) => c.kind === 'ERP' && c.availability === 'sandbox').map((c) => ({ value: c.id, label: c.name }))} onChange={(v) => { setStockConnector(v || null); showToast('Stock connector saved.', 'success'); }} /></Field>
         <Field label="Warn when ERP stock is older than (hours)" hint="Orders show a freshness warning before confirming."><NumberInput value={st.staleHours} disabled={!canConfigure} onChange={(v) => setStaleHours(v ?? 6)} /></Field>
       </FormGrid>
       <div className="g2-table-wrap"><table className="g2-table">
@@ -55,7 +56,7 @@ export const SourceSettingsTab: React.FC<{ canConfigure: boolean }> = ({ canConf
           return (
             <tr key={w.id}>
               <td><div className="g2-strong">{w.code}</div><div className="g2-cell-sub">{w.name} · {w.state}</div></td>
-              <td style={{ minWidth: 300 }}><Select value={own ?? 'DEFAULT'} disabled={!canConfigure} options={[{ value: 'DEFAULT', label: `Follow default (${SETTING_OPTS.find((o) => o.value === st.defaultSource)?.label.split(' —')[0]})` }, ...SETTING_OPTS]} onChange={(v) => change(w.id, v)} /></td>
+              <td style={{ minWidth: 300 }}>{!st.perWarehouseEnabled ? <span className="g2-small g2-muted">Follows the principal setting</span> : <Select value={own ?? 'DEFAULT'} disabled={!canConfigure} options={[{ value: 'DEFAULT', label: `Follow default (${SETTING_OPTS.find((o) => o.value === st.defaultSource)?.label.split(' —')[0]})` }, ...SETTING_OPTS]} onChange={(v) => change(w.id, v)} />}</td>
               <td><SourceBadge s={sourceOf(w.id, imp)} /></td>
               <td className="g2-small">{m ? CONNECTORS.find((c) => c.id === m)?.name : fedBy ? <span className="g2-muted">{fedBy.name} mapped, not used ({settingOf(w.id) === 'VINFLUX' || settingOf(w.id) === 'NONE' ? 'taken out of ERP control' : 'connector off'})</span> : <span className="g2-muted">None — Excel import or VinFlux</span>}</td>
               <td style={{ textAlign: 'right' }}>{balances().filter((b) => b.locType === 'COMPANY' && b.warehouseId === w.id).reduce((a, b) => a + b.qty, 0)}</td>

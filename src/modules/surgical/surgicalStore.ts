@@ -77,6 +77,8 @@ export interface SurgeryCase {
   partnerId: string | null;
   partnerName: string | null;
   setIds: string[];
+  /** Who supplies, supports in theatre and bills (missing on older cases: same as the owner). */
+  roles?: CaseRoles;
   status: CaseStatus;
   usage: UsageLine[];
   missing: MissingLine[];
@@ -86,6 +88,30 @@ export interface SurgeryCase {
   createdAt: string;
   history: { at: string; by: string; action: string; note?: string }[];
 }
+/** A company taking part in a case: the principal itself, or a channel partner. */
+export interface CaseParty { kind: 'COMPANY' | 'PARTNER'; partnerId: string | null; name: string | null }
+/**
+ * Who does what in a case. The owner (servedBy / partnerId) runs the case; the others can be different companies,
+ * e.g. a distributor supplies and bills, the principal sends the OT support person.
+ */
+export interface CaseRoles {
+  goods: CaseParty;
+  /** Warehouse stock (loaner sets shipped) or a consignment set already at the hospital (no shipment). */
+  goodsFrom: 'stock' | 'consignment';
+  /** Person in theatre who records usage; null = none. */
+  ot: CaseParty | null;
+  billing: CaseParty;
+}
+export const COMPANY: CaseParty = { kind: 'COMPANY', partnerId: null, name: null };
+export const partyLabel = (p: CaseParty | null, company = 'Company') => (!p ? 'None' : p.kind === 'COMPANY' ? company : p.name ?? 'Partner');
+export const sameParty = (a: CaseParty | null, b: CaseParty | null) => !!a && !!b && a.kind === b.kind && (a.kind === 'COMPANY' || a.partnerId === b.partnerId);
+/** Roles of a case; older cases (before roles) are derived from the owner. */
+export const rolesOf = (c: Pick<SurgeryCase, 'servedBy' | 'partnerId' | 'partnerName' | 'roles' | 'setIds'>): CaseRoles => {
+  if (c.roles) return c.roles;
+  const owner: CaseParty = c.servedBy === 'PARTNER' ? { kind: 'PARTNER', partnerId: c.partnerId, name: c.partnerName } : COMPANY;
+  return { goods: owner, goodsFrom: 'stock', ot: owner, billing: owner };
+};
+
 export interface ImplantRecord {
   id: string;
   caseId: string;
@@ -186,7 +212,17 @@ const putSets = (d: Db, ids: string[], fn: (s: InstrumentSet) => InstrumentSet):
 export interface NewCase {
   principalId: string; hospitalId: string; hospitalName: string; surgeon: string; procedure: string; surgeryDate: string; patientRef: string;
   servedBy: 'COMPANY' | 'PARTNER'; partnerId: string | null; partnerName: string | null; setIds: string[]; notes: string;
+  roles?: CaseRoles;
 }
+
+/* Default case roles per hospital (level-3 setting), saved from the booking form. */
+const HKEY = () => workspaceKey('vinflux.surgical.hospitalRoles.v1');
+type HospitalRoles = Record<string, { owner: CaseParty; roles: CaseRoles }>;
+export const hospitalRoles = (hospitalId: string) => loadJson<HospitalRoles>(HKEY(), {})[hospitalId] ?? null;
+export const saveHospitalRoles = (hospitalId: string, owner: CaseParty, roles: CaseRoles) => {
+  saveJson(HKEY(), { ...loadJson<HospitalRoles>(HKEY(), {}), [hospitalId]: { owner, roles } });
+  listeners.forEach((l) => l());
+};
 /** Book a case and reserve the sets. `blockers` come from the caller's checks (hospital / partner can't trade). */
 export const bookCase = (n: NewCase, by: string, blockers: string[] = []): Result & { id?: string } => {
   const d = db();
@@ -198,6 +234,12 @@ export const bookCase = (n: NewCase, by: string, blockers: string[] = []): Resul
   else if (n.surgeryDate < today()) errs.push('Surgery date is in the past.');
   if (!n.patientRef.trim()) errs.push('Hospital patient ID (UHID / IP no.) is required for implant traceability.');
   if (!n.setIds.length) errs.push('Choose at least one instrument set.');
+  if (n.roles) {
+    if (n.roles.goods.kind === 'PARTNER' && !n.roles.goods.partnerId) errs.push('Choose the partner supplying the goods.');
+    if (n.roles.ot?.kind === 'PARTNER' && !n.roles.ot.partnerId) errs.push('Choose the partner giving OT support.');
+    if (n.roles.billing.kind === 'PARTNER' && !n.roles.billing.partnerId) errs.push('Choose the partner billing the hospital.');
+    if (n.roles.goodsFrom === 'consignment' && n.setIds.some((id) => d.sets.find((x) => x.id === id)?.kind !== 'Consignment')) errs.push('Goods come from the consignment set at the hospital, so choose only consignment sets placed there.');
+  }
   n.setIds.forEach((id) => {
     const s = d.sets.find((x) => x.id === id);
     if (!s) return;
@@ -283,7 +325,8 @@ export const closeCase = (caseId: string, by: string): Result => {
   const billNo = `INV-SC-${c.code.slice(5)}`;
   commit(putCase(d, log({ ...c, status: 'Closed', billNo }, by, `Closed, bill ${billNo} raised`)));
   emit('case.closed', 'Surgery & Implants', by, `${c.code} closed, bill ${billNo}`, { caseId });
-  return { ok: true, message: `${c.code} closed — bill ${billNo} raised${c.servedBy === 'PARTNER' ? ` (billed by ${c.partnerName}; usage replenished to the partner)` : ''}.` };
+  const r = rolesOf(c);
+  return { ok: true, message: `${c.code} closed — bill ${billNo} raised${r.billing.kind === 'PARTNER' ? ` (billed by ${r.billing.name}${r.goods.kind === 'PARTNER' ? '; usage replenished to the partner' : ''})` : ''}.` };
 };
 
 export const cancelCase = (caseId: string, reason: string, by: string): Result => {

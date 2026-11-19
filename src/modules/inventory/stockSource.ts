@@ -23,7 +23,13 @@ export const SOURCE_HINT: Record<StockSource, string> = {
 
 /* --------------------------------- Settings --------------------------------- */
 
-interface Settings { defaultSource: SourceSetting; perWarehouse: Record<string, SourceSetting>; staleHours: number }
+interface Settings {
+  defaultSource: SourceSetting; perWarehouse: Record<string, SourceSetting>; staleHours: number;
+  /** Phase 1: one mode for the whole principal. Per-warehouse settings are kept but ignored unless this is on. */
+  perWarehouseEnabled?: boolean;
+  /** The one ERP connector that supplies all stock (null = whichever enabled connector feeds the warehouse). */
+  connectorId?: string | null;
+}
 let cache: Settings | null = null;
 const listeners = new Set<() => void>();
 const KEY = () => workspaceKey('vinflux.stockSource.v1');
@@ -36,10 +42,12 @@ export const setWarehouseSource = (warehouseId: string, s: SourceSetting | null)
   if (s === null) delete per[warehouseId]; else per[warehouseId] = s;
   commit({ ...sourceSettings(), perWarehouse: per });
 };
+export const setStockConnector = (id: string | null) => commit({ ...sourceSettings(), connectorId: id });
+export const setPerWarehouseEnabled = (on: boolean) => commit({ ...sourceSettings(), perWarehouseEnabled: on });
 export const setStaleHours = (h: number) => commit({ ...sourceSettings(), staleHours: Math.max(1, h) });
 
 /** The setting that applies to a warehouse (its own, else the default). */
-export const settingOf = (warehouseId: string): SourceSetting => sourceSettings().perWarehouse[warehouseId] ?? sourceSettings().defaultSource;
+export const settingOf = (warehouseId: string): SourceSetting => (sourceSettings().perWarehouseEnabled ? sourceSettings().perWarehouse[warehouseId] : undefined) ?? sourceSettings().defaultSource;
 /** Resolve the effective source; `hasConnector` = an ERP connector feeds this warehouse. */
 export const resolveSource = (warehouseId: string, hasConnector: boolean): StockSource => {
   const s = settingOf(warehouseId);

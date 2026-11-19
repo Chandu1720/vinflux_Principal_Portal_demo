@@ -8,7 +8,7 @@ import { erpIssue, runStockSync } from '../../platform/integrations/stockSync';
 import { balances, movements, post } from '../inventory/stockStore';
 import type { LocType, StockBalance } from '../inventory/stockStore';
 import {
-  SEEDED_KEY, atp, minShelfDays, confirmOrder, createOrder, createShipment, deliverShipment, getOrder, orders, routeOf, toShip,
+  SEEDED_KEY, approveOrder, answerPartFill, atp, minShelfDays, confirmOrder, createOrder, createShipment, deliverShipment, getOrder, orders, routeOf, toShip,
 } from './orderStore';
 import type { Allocation, NewOrderInput, OrderCtx } from './orderStore';
 import { priceLine, processInbox, receiveEmail, shipFromFor } from './intake';
@@ -57,6 +57,14 @@ export const ensureDemo = (imp: ImportContext, ctx: OrderCtx, principalId: strin
   };
   const gs = g ? { productId: g.productId, variantSku: g.variantSku } : null;
   const ss = ser ? { productId: ser.productId, variantSku: ser.variantSku } : null;
+  // Seeded history predates the approval rules: approve it as the administrator, then it confirms like any order.
+  const ready = (id: string | null) => {
+    if (!id) return false;
+    for (let i = 0; i < 3 && getOrder(id)?.status === 'Awaiting approval'; i++) approveOrder(id, 'Seeded history', ctx, { name: 'Meera Iyer', role: 'Administrator' });
+    if (getOrder(id)?.status === 'Awaiting partner') answerPartFill(id, 'ship-available', 'Order desk', ctx, 'Ravi Kumar');
+    return ['Validated', 'Confirmed'].includes(getOrder(id)?.status ?? '');
+  };
+  const conf = (id: string, by: string, erp?: string) => { if (getOrder(id)?.status === 'Validated') confirmOrder(id, full(id), ctx, by, erp); };
   const full = (id: string | null) => { const o = id ? getOrder(id) : null; return o ? Object.fromEntries(o.lines.map((l) => [l.id, { confirm: l.qty, backorderDate: null, substituteSku: null }])) : {}; };
   const issue = (w: string, a: Allocation[]) => erpIssue(w, a, imp);
   const shipAll = (id: string, carrier: string, awb: string, eta: number, by: string) => { const o = getOrder(id); if (o) createShipment(id, toShip(o), { carrier, awb, etaDays: eta, packages: 1, weightKg: 4 }, ctx, by, { onErpIssue: issue }); };
@@ -64,8 +72,8 @@ export const ensureDemo = (imp: ImportContext, ctx: OrderCtx, principalId: strin
   // Completed (history): Yashoda direct — confirmed, shipped, delivered.
   if (gs) {
     const id = mk('ptr-hosp-hyd', [{ ...gs, qty: 10 }], { source: 'Email' });
-    if (id && getOrder(id)?.status === 'Validated') {
-      confirmOrder(id, full(id), ctx, 'Ravi Kumar', 'SAP S/4HANA');
+    if (id && ready(id)) {
+      conf(id, 'Ravi Kumar', 'SAP S/4HANA');
       shipAll(id, 'Blue Dart', 'BD-77812340', 1, 'Suresh Reddy');
       const sh = getOrder(id)?.shipments[0];
       if (sh) deliverShipment(id, sh.id, 'Stores — Yashoda Somajiguda', 'Signature', ctx.partners, 'Suresh Reddy');
@@ -80,12 +88,12 @@ export const ensureDemo = (imp: ImportContext, ctx: OrderCtx, principalId: strin
   })();
   if (cnfPick && cnfPick.qty > 1) {
     const id = mk('ptr-cnf-hyd', [{ productId: cnfPick.productId, variantSku: cnfPick.variantSku, qty: Math.min(cnfPick.qty - 1, 10) }], { source: 'EDI', notes: 'Weekly replenishment proposal accepted' });
-    if (id && getOrder(id)?.status === 'Validated') { confirmOrder(id, full(id), ctx, 'Suresh Reddy', 'SAP S/4HANA'); shipAll(id, 'VRL Logistics', 'LR-552190', 2, 'Suresh Reddy'); }
+    if (id && ready(id)) { conf(id, 'Suresh Reddy', 'SAP S/4HANA'); shipAll(id, 'VRL Logistics', 'LR-552190', 2, 'Suresh Reddy'); }
   }
   // Confirmed (reserved, waiting for shipment): Charminar via the C&F.
   if (ss) {
     const id = mk('ptr-dist-hyd', [{ ...ss, qty: 2 }], { source: 'Portal' });
-    if (id && getOrder(id)?.status === 'Validated') confirmOrder(id, full(id), ctx, 'Ravi Kumar');
+    if (id && ready(id)) conf(id, 'Ravi Kumar');
   }
   // On hold: Garden City over its credit limit.
   if (ss) mk('ptr-dist-blr', [{ ...ss, qty: 12 }], { source: 'Phone', notes: 'Tender supply for Narayana Health' });

@@ -4,6 +4,8 @@ import type { ModuleId } from './modules';
 import { emit } from './events';
 import { loadJson, saveJson } from './store';
 import { currentWorkspace } from './workspace';
+import { setOptionsPrincipal, subscribeOptions } from './moduleOptions';
+import { useSubscribe } from './useStore';
 
 const KEY = 'vinflux.modules.v2';
 /**
@@ -25,12 +27,16 @@ interface PlatformCtx {
   enabledIds: ModuleId[];
   /** Module owning a path, if any, and whether it is on. */
   pathAllowed: (path: string) => boolean;
+  /** Switch on exactly `onIds` (plus their dependencies and core modules); everything else off. Used by the setup checklist. */
+  applyModules: (onIds: ModuleId[], actor: string) => { ok: boolean; message: string };
 }
 
 const Ctx = createContext<PlatformCtx | undefined>(undefined);
 
 export const PlatformProvider: React.FC<{ principalId: string; children: React.ReactNode }> = ({ principalId, children }) => {
   const [all, setAll] = useState<Record<string, ModuleId[]>>(loadOff);
+  setOptionsPrincipal(principalId);
+  useSubscribe(subscribeOptions);
   const ws = currentWorkspace();
   const enabledIds = useMemo(() => MODULES.filter((m) => m.status === 'available' && (!m.industries?.length || m.industries.includes(ws)) && !(all[principalId] ?? []).includes(m.id)).map((m) => m.id), [all, principalId, ws]);
   const enabled = useCallback((id: ModuleId) => MODULES.find((m) => m.id === id)?.core || enabledIds.includes(id), [enabledIds]);
@@ -59,7 +65,20 @@ export const PlatformProvider: React.FC<{ principalId: string; children: React.R
     return !owner || enabled(owner.id);
   }, [enabled]);
 
-  const value = useMemo(() => ({ enabled, setEnabled, enabledIds, pathAllowed }), [enabled, setEnabled, enabledIds, pathAllowed]);
+  const applyModules = useCallback((onIds: ModuleId[], actor: string) => {
+    const want = new Set<ModuleId>();
+    const add = (id: ModuleId) => { const m = MODULES.find((x) => x.id === id); if (!m || m.status !== 'available' || want.has(id)) return; want.add(id); m.dependsOn.forEach(add); };
+    onIds.forEach(add);
+    const offable = MODULES.filter((m) => !m.core && m.status === 'available');
+    const off = offable.filter((m) => !want.has(m.id)).map((m) => m.id);
+    const map = { ...all, [principalId]: off };
+    setAll(map); saveJson(KEY, map);
+    const added = [...want].filter((id) => !onIds.includes(id) && !MODULES.find((m) => m.id === id)?.core);
+    emit('module.enabled', 'Platform', actor, `Setup checklist applied: ${offable.length - off.length} modules on, ${off.length} off`, { principalId, on: [...want], off });
+    return { ok: true, message: `Setup applied: ${offable.length - off.length} modules on, ${off.length} off${added.length ? ` (also switched on because others need them: ${added.map((a) => MODULES.find((m) => m.id === a)?.name).join(', ')})` : ''}.` };
+  }, [all, principalId]);
+
+  const value = useMemo(() => ({ enabled, setEnabled, enabledIds, pathAllowed, applyModules }), [enabled, setEnabled, enabledIds, pathAllowed, applyModules]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };
 

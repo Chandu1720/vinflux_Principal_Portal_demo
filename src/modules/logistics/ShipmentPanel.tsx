@@ -15,6 +15,7 @@ import type { ErpInvoice } from '../orders/orderStore';
 import { erpProfile } from '../../platform/integrations/erpProfiles';
 import type { Order, OrderCtx, Shipment, ShipOpts } from '../orders/orderStore';
 import { carrierByName, carriers, freightFor, serves, subscribeCarriers } from './carrierStore';
+import { optChoice } from '../../platform/moduleOptions';
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
@@ -103,7 +104,8 @@ export const ShipForm: React.FC<{ o: Order; ctx: OrderCtx; destState?: string; o
 
 export const ShipmentCard: React.FC<{ o: Order; sh: Shipment; ctx: OrderCtx; canEdit: boolean; run: Run }> = ({ o, sh, ctx, canEdit, run }) => {
   const { currentUser } = useApp();
-  const [pod, setPod] = useState({ receivedBy: '', method: 'Signature' as 'Signature' | 'Photo' | 'OTP' });
+  const podOpt = optChoice('logistics', 'pod');
+  const [pod, setPod] = useState({ receivedBy: '', method: (podOpt === 'otp' ? 'OTP' : podOpt === 'photo' ? 'Photo' : 'Signature') as 'Signature' | 'Photo' | 'OTP' });
   const [problem, setProblem] = useState<Record<number, { short: number; damaged: number }> | null>(null);
   const dest = destinationOf(o, ctx.partners);
   const late = !sh.deliveredAt && sh.eta < new Date().toISOString().slice(0, 10);

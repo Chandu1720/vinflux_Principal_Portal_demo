@@ -19,6 +19,7 @@ import { ensureDemo } from '../orders/seedDemo';
 import { ShipForm, ShipmentCard } from './ShipmentPanel';
 import { blankCarrier, carrierByName, carriers, freightFor, saveCarrier, scorecard, serves, subscribeCarriers } from './carrierStore';
 import type { Carrier, CarrierMode } from './carrierStore';
+import { opt, subscribeOptions } from '../../platform/moduleOptions';
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -119,7 +120,7 @@ const CarrierDrawer: React.FC<{ value: Carrier; onClose: () => void }> = ({ valu
 /* ------------------------------------ Page ------------------------------------ */
 
 const LogisticsPage: React.FC = () => {
-  useSubscribe(subscribeOrders, subscribeStock, subscribeCarriers);
+  useSubscribe(subscribeOrders, subscribeStock, subscribeCarriers, subscribeOptions);
   const ctx = useOrderCtx();
   const imp = useImportContext();
   const { activePrincipal, currentUser, showToast } = useApp();
@@ -184,8 +185,8 @@ const LogisticsPage: React.FC = () => {
             { id: 'queue', label: 'Dispatch queue', count: queue.length || undefined },
             { id: 'transit', label: 'In transit', count: transit.length || undefined },
             { id: 'delivered', label: 'Delivered', count: delivered.length || undefined },
-            { id: 'claims', label: 'Claims', count: open.length || undefined },
-            { id: 'carriers', label: 'Carriers' },
+            ...(opt('logistics', 'claims') ? [{ id: 'claims', label: 'Claims', count: open.length || undefined }] : []),
+            ...(opt('logistics', 'carriers') ? [{ id: 'carriers', label: 'Carriers' }] : []),
           ]} />
           <span className="g2-spacer" />
           {tab !== 'carriers' && <SearchInput value={q} onChange={setQ} placeholder="Order, partner, PO…" />}
@@ -197,7 +198,7 @@ const LogisticsPage: React.FC = () => {
             <span className="g2-spacer" />
             {tripBlock && <span className="g2-small" style={{ color: '#b45309' }}>{tripBlock}</span>}
             {canEdit && sel.length === 1 && <Button variant="primary" icon={<Truck size={14} />} onClick={() => setShipId(sel[0])}>Create shipment</Button>}
-            {canEdit && sel.length > 1 && <Button variant="primary" icon={<Truck size={14} />} disabled={!!tripBlock} onClick={() => setTrip(sel)}>One trip for {sel.length} orders</Button>}
+            {canEdit && sel.length > 1 && opt('logistics', 'trips') && <Button variant="primary" icon={<Truck size={14} />} disabled={!!tripBlock} onClick={() => setTrip(sel)}>One trip for {sel.length} orders</Button>}
           </div>
           <div className="g2-table-wrap"><table className="g2-table">
             <thead><tr><th style={{ width: 36 }} /><th>Order</th><th>Deliver to</th><th>Ships from</th><th style={{ textAlign: 'right' }}>Units to ship</th><th style={{ textAlign: 'right' }}>Value</th><th>Required by</th></tr></thead>

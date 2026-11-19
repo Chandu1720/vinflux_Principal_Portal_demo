@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Briefcase, CalendarClock, ClipboardCheck, Printer, Search, ShieldAlert, Stethoscope } from 'lucide-react';
 import {
-  Alert, Badge, Button, Card, Checkbox, ErrorList, Field, FormGrid, Input, KpiCard, Modal, MultiSelect, NumberInput, PageHeader, SearchableSelect, Select, Stepper, Tabs, Textarea,
+  Alert, Badge, Button, Card, Checkbox, ErrorList, Field, FormGrid, Input, KpiCard, Modal, MultiSelect, NumberInput, PageHeader, SearchableSelect, Segmented, Select, Stepper, Tabs, Textarea,
 } from '../../platform/ui';
 import { useSubscribe } from '../../platform/useStore';
 import { useApp } from '../../context/AppContext.tsx';
@@ -12,11 +12,13 @@ import { assignmentState } from '../gtm-v2/utils/coverage';
 import type { Partner } from '../gtm-v2/types';
 import { gstOf, subscribePricing } from '../pricing/pricingStore';
 import { quoteFor } from '../pricing/quoteFor';
+import { opt, subscribeOptions } from '../../platform/moduleOptions';
 import {
+  COMPANY, hospitalRoles, partyLabel, rolesOf, sameParty, saveHospitalRoles,
   bookCase, cancelCase, cases as listCases, closeCase, dispatchKit, getCase, getSet, markExplanted, recordUsage, refillImplants, register as listRegister,
   replaceItems, returnKit, sets as listSets, sterilised, subscribeSurgical, trace, udiString,
 } from './surgicalStore';
-import type { CaseStatus, ImplantRecord, InstrumentSet, SetStatus, SurgeryCase, UsageLine } from './surgicalStore';
+import type { CaseParty, CaseRoles, CaseStatus, ImplantRecord, InstrumentSet, SetStatus, SurgeryCase, UsageLine } from './surgicalStore';
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -36,6 +38,23 @@ const useGtm = () => {
   return { partners, config, channels, terms, territories, assignments };
 };
 
+/* ------------------------------- Party picker ------------------------------- */
+
+/** Company / a partner / (optionally) nobody. */
+const PartyPicker: React.FC<{ value: CaseParty | null; partners: Partner[]; allowNone?: boolean; onChange: (p: CaseParty | null) => void }> = ({ value, partners, allowNone, onChange }) => {
+  const kind = value ? value.kind : 'NONE';
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <Select value={kind} options={[{ value: 'COMPANY', label: 'Our company' }, { value: 'PARTNER', label: 'A channel partner' }, ...(allowNone ? [{ value: 'NONE', label: 'No one' }] : [])]}
+        onChange={(v) => onChange(v === 'NONE' ? null : v === 'COMPANY' ? COMPANY : { kind: 'PARTNER', partnerId: value?.kind === 'PARTNER' ? value.partnerId : null, name: value?.kind === 'PARTNER' ? value.name : null })} />
+      {value?.kind === 'PARTNER' && (
+        <SearchableSelect value={value.partnerId ?? ''} placeholder="Choose partner…" options={partners.map((p) => ({ value: p.id, label: p.name, description: p.code }))}
+          onChange={(v) => onChange({ kind: 'PARTNER', partnerId: v ?? null, name: partners.find((p) => p.id === v)?.name ?? null })} />
+      )}
+    </div>
+  );
+};
+
 /* --------------------------------- New case --------------------------------- */
 
 const NewCaseDrawer: React.FC<{ onClose: () => void; onOpen: (id: string) => void }> = ({ onClose, onOpen }) => {
@@ -48,11 +67,34 @@ const NewCaseDrawer: React.FC<{ onClose: () => void; onOpen: (id: string) => voi
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
   const hospital = hospitals.find((h) => h.id === f.hospitalId);
   // Default supplier = whoever is the primary for this hospital in Hospital Coverage.
+  const splitRoles = opt('surgical', 'caseRoles');
+  const ownerParty: CaseParty = f.servedBy === 'PARTNER' ? { kind: 'PARTNER', partnerId: f.partnerId || null, name: resellers.find((p) => p.id === f.partnerId)?.name ?? null } : COMPANY;
+  // Role overrides: a role not set here follows the case owner (billing follows the goods supplier).
+  type Ovr = { goods?: CaseParty; ot?: CaseParty | null; billing?: CaseParty; goodsFrom: CaseRoles['goodsFrom'] };
+  const [ovr, setOvr] = useState<Ovr>({ goodsFrom: 'stock' });
+  const [saveDefault, setSaveDefault] = useState(false);
+  const setRole = (patch: Partial<Ovr>) => setOvr((r) => ({ ...r, ...patch }));
+  // Default supplier = saved hospital roles, else whoever is the primary for this hospital in Hospital Coverage.
   const pickHospital = (id: string) => {
+    const saved = hospitalRoles(id);
+    if (saved) {
+      set({ hospitalId: id, servedBy: saved.owner.kind, partnerId: saved.owner.partnerId ?? '', setIds: [] });
+      setOvr({ ...saved.roles }); return;
+    }
     const prim = g.assignments.find((a) => a.customerId === id && a.role === 'PRIMARY' && assignmentState(a) === 'Current');
     set({ hospitalId: id, servedBy: prim?.servedBy === 'PARTNER' ? 'PARTNER' : 'COMPANY', partnerId: prim?.partnerId ?? '', setIds: [] });
+    setOvr({ goodsFrom: 'stock' });
   };
-  const freeSets = listSets().filter((s) => (s.kind === 'Loaner' ? s.status === 'Available' : s.hospitalId === f.hospitalId && s.status === 'At hospital' && !s.caseId));
+  const goodsParty = (splitRoles && ovr.goods) || ownerParty;
+  const effRoles: CaseRoles = {
+    goods: goodsParty,
+    goodsFrom: ovr.goodsFrom,
+    ot: splitRoles && 'ot' in ovr ? ovr.ot ?? null : ownerParty,
+    billing: (splitRoles && ovr.billing) || goodsParty,
+  };
+  const consignmentOn = opt('surgical', 'consignmentSets');
+  const loanerOn = opt('surgical', 'loanerSets');
+  const freeSets = listSets().filter((s) => (s.kind === 'Loaner' ? loanerOn && effRoles.goodsFrom === 'stock' && s.status === 'Available' : consignmentOn && s.hospitalId === f.hospitalId && s.status === 'At hospital' && !s.caseId));
   const blockers: string[] = [];
   const ctx = { channels: g.channels, terms: g.terms, territories: g.territories };
   if (hospital && g.config) { const t = tradeStatusOf(hospital, g.config, ctx); if (!t.canTrade) blockers.push(`${hospital.name} can’t be supplied: ${t.reasons.filter((r) => r.tone === 'red' || r.tone === 'slate').map((r) => r.text).join('; ')}.`); }
@@ -61,8 +103,9 @@ const NewCaseDrawer: React.FC<{ onClose: () => void; onOpen: (id: string) => voi
   if (f.servedBy === 'PARTNER' && !f.partnerId) blockers.push('Choose the partner serving this case.');
   const save = () => {
     const r = bookCase({ principalId: activePrincipal.id, hospitalId: f.hospitalId, hospitalName: hospital?.name ?? '', surgeon: f.surgeon, procedure: f.procedure, surgeryDate: f.surgeryDate, patientRef: f.patientRef,
-      servedBy: f.servedBy, partnerId: f.servedBy === 'PARTNER' ? f.partnerId : null, partnerName: f.servedBy === 'PARTNER' ? partner?.name ?? null : null, setIds: f.setIds, notes: f.notes }, currentUser.name, blockers);
+      servedBy: f.servedBy, partnerId: f.servedBy === 'PARTNER' ? f.partnerId : null, partnerName: f.servedBy === 'PARTNER' ? partner?.name ?? null : null, setIds: f.setIds, notes: f.notes, roles: effRoles }, currentUser.name, blockers);
     if (!r.ok) { setErrs(r.errors ?? [r.message]); return; }
+    if (saveDefault && splitRoles) saveHospitalRoles(f.hospitalId, ownerParty, effRoles);
     showToast(r.message, 'success'); onClose(); if (r.id) onOpen(r.id);
   };
   return (
@@ -77,11 +120,24 @@ const NewCaseDrawer: React.FC<{ onClose: () => void; onOpen: (id: string) => voi
           <Field label="Surgeon" required><Input value={f.surgeon} placeholder="Dr. …" onChange={(e) => set({ surgeon: e.target.value })} /></Field>
           <Field label="Procedure" required><Input value={f.procedure} onChange={(e) => set({ procedure: e.target.value })} /></Field>
           <Field label="Hospital patient ID" required hint="UHID / IP number only — no patient names are stored"><Input value={f.patientRef} placeholder="e.g. YH-UHID-2026-120001" onChange={(e) => set({ patientRef: e.target.value })} /></Field>
-          <Field label="Served by" hint={f.hospitalId ? 'Defaults to the primary in Hospital Coverage' : undefined}>
+          <Field label={splitRoles ? 'Case owner (runs the case)' : 'Served by'} hint={f.hospitalId ? (hospitalRoles(f.hospitalId) ? 'From this hospital’s saved case roles' : 'Defaults to the primary in Hospital Coverage') : undefined}>
             <Select value={f.servedBy} options={[{ value: 'COMPANY', label: 'Company direct' }, { value: 'PARTNER', label: 'Channel partner' }]} onChange={(v) => set({ servedBy: v as 'COMPANY' | 'PARTNER' })} />
           </Field>
           {f.servedBy === 'PARTNER' && <Field label="Partner" required><SearchableSelect value={f.partnerId} options={resellers.map((p) => ({ value: p.id, label: p.name, description: p.code }))} onChange={(v) => set({ partnerId: v ?? '' })} /></Field>}
         </FormGrid>
+        {splitRoles && (
+          <Card title="Who does what" subtitle="Each role can be a different company. A role you don’t change follows the case owner (billing follows the goods supplier).">
+            <FormGrid>
+              <Field label="Goods supplied by"><PartyPicker value={effRoles.goods} partners={resellers} onChange={(p) => setRole({ goods: p ?? COMPANY })} /></Field>
+              <Field label="Goods come from" hint={effRoles.goodsFrom === 'consignment' ? 'Used from the set already at the hospital — no shipment' : 'Loaner sets shipped from the warehouse'}>
+                <Select value={effRoles.goodsFrom} options={[{ value: 'stock', label: 'Warehouse stock (ship sets)', disabled: !loanerOn }, { value: 'consignment', label: 'Consignment set at the hospital', disabled: !consignmentOn }]} onChange={(v) => { setRole({ goodsFrom: v as CaseRoles['goodsFrom'] }); set({ setIds: [] }); }} />
+              </Field>
+              <Field label="OT support by" hint="Person in theatre who marks used items and photographs stickers"><PartyPicker value={effRoles.ot} partners={resellers} allowNone onChange={(p) => setRole({ ot: p })} /></Field>
+              <Field label="Hospital billed by"><PartyPicker value={effRoles.billing} partners={resellers} onChange={(p) => setRole({ billing: p ?? COMPANY })} /></Field>
+            </FormGrid>
+            {f.hospitalId && <div style={{ marginTop: 10 }}><Checkbox checked={saveDefault} onChange={setSaveDefault} label={`Save as default for ${hospital?.name ?? 'this hospital'}`} /></div>}
+          </Card>
+        )}
         <Field label="Instrument sets" required hint={f.hospitalId ? `${freeSets.length} set(s) free — loaner sets from the warehouse, or consignment sets already at this hospital` : 'Choose the hospital first'}>
           <MultiSelect values={f.setIds} disabled={!f.hospitalId} placeholder="Choose sets…" options={freeSets.map((s) => ({ value: s.id, label: `${s.code} · ${s.name}`, description: `${s.kind} · ${s.items.filter((i) => i.kind === 'Implant').length} implants loaded · cycle ${s.sterilisationCycles}` }))} onChange={(v) => set({ setIds: v })} />
         </Field>
@@ -147,7 +203,12 @@ const CaseDrawer: React.FC<{ id: string; onClose: () => void; canEdit: boolean }
         {errs.length > 0 && <ErrorList errors={errs} title="Can’t continue" />}
         <dl className="g2-dl">
           <dt>Hospital patient ID</dt><dd className="g2-mono">{c.patientRef}</dd>
-          <dt>Served by</dt><dd>{c.servedBy === 'COMPANY' ? 'Company direct' : c.partnerName}</dd>
+          <dt>Case owner</dt><dd>{c.servedBy === 'COMPANY' ? 'Company direct' : c.partnerName}</dd>
+          {(() => { const r = rolesOf(c); return (<>
+            <dt>Goods</dt><dd>{partyLabel(r.goods)} · {r.goodsFrom === 'consignment' ? 'consignment set at hospital' : 'warehouse stock'}</dd>
+            <dt>OT support</dt><dd>{partyLabel(r.ot)}</dd>
+            <dt>Billed by</dt><dd>{partyLabel(r.billing)}</dd>
+          </>); })()}
           <dt>Sets</dt><dd>{caseSets.map((s) => `${s.code} (${s.kind})`).join(', ')}</dd>
           {c.notes && <><dt>Notes</dt><dd>{c.notes}</dd></>}
           {c.billNo && <><dt>Bill</dt><dd className="g2-strong">{c.billNo}</dd></>}
@@ -202,7 +263,7 @@ const CaseDrawer: React.FC<{ id: string; onClose: () => void; canEdit: boolean }
         )}
 
         {(c.usage.length > 0 || c.missing.length > 0) && (
-          <Card title={c.status === 'Closed' ? `Bill ${c.billNo}` : 'Bill preview'} subtitle={c.servedBy === 'PARTNER' ? `${c.partnerName} bills the hospital; the company replenishes the used items to the partner.` : 'Company bills the hospital directly at its contract / list price.'}>
+          <Card title={c.status === 'Closed' ? `Bill ${c.billNo}` : 'Bill preview'} subtitle={(() => { const r = rolesOf(c); return r.billing.kind === 'PARTNER' ? `${r.billing.name} bills the hospital${r.goods.kind === 'PARTNER' ? '; the company replenishes the used items to the partner' : ''}.` : 'Company bills the hospital directly at its contract / list price.'; })()}>
             <div className="g2-table-wrap"><table className="g2-table">
               <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Unit price</th><th>Price from</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
               <tbody>
@@ -309,8 +370,15 @@ const ImplantCard: React.FC<{ r: ImplantRecord; manufacturer: string; onClose: (
 
 /* ----------------------------------- Page ----------------------------------- */
 
+const ROLE_FILTERS = [{ id: 'all', label: 'All' }, { id: 'owner', label: 'We run' }, { id: 'goods', label: 'We supply' }, { id: 'ot', label: 'We support in OT' }, { id: 'billing', label: 'We bill' }, { id: 'partner', label: 'Partner-run' }];
+
 const SurgicalPage: React.FC = () => {
-  useSubscribe(subscribeSurgical);
+  useSubscribe(subscribeSurgical, subscribeOptions);
+  const runCases = opt('surgical', 'cases');
+  const partnerUsage = opt('surgical', 'partnerUsage');
+  const showSets = opt('surgical', 'loanerSets') || opt('surgical', 'consignmentSets');
+  const showRegister = opt('surgical', 'implantRegister');
+  const [rf, setRf] = useState('all');
   const { currentUser, products, activePrincipal, principals, showToast } = useApp();
   const g = useGtm();
   const [params, setParams] = useSearchParams();
@@ -325,7 +393,12 @@ const SurgicalPage: React.FC = () => {
   const m = currentUser.matrix;
   const canEdit = !m || !!m.gtm?.includes('edit') || !!m.inventory?.includes('edit');
   const hName = (id: string | null) => g.partners.find((p: Partner) => p.id === id)?.name ?? '—';
-  const allCases = listCases().filter((c) => c.principalId === activePrincipal.id);
+  const weAre = (c: SurgeryCase) => { const r = rolesOf(c); return { owner: c.servedBy === 'COMPANY', goods: r.goods.kind === 'COMPANY', ot: r.ot?.kind === 'COMPANY', billing: r.billing.kind === 'COMPANY' }; };
+  const involved = (c: SurgeryCase) => Object.values(weAre(c)).some(Boolean);
+  // Cases off: only partner-run cases are shown, read-only (if usage sharing is on). Usage sharing off: partner-run cases we have no role in are hidden.
+  const visibleCases = listCases().filter((c) => c.principalId === activePrincipal.id).filter((c) => (runCases ? partnerUsage || involved(c) : partnerUsage && c.servedBy === 'PARTNER'));
+  const allCases = visibleCases.filter((c) => { const w = weAre(c); return rf === 'all' ? true : rf === 'partner' ? !w.owner : !!w[rf as keyof typeof w]; });
+  const canBook = canEdit && runCases;
   const allSets = listSets();
   const reg = listRegister();
   const results = useMemo(() => trace({ productId: tq.productId || undefined, batch: tq.batch || undefined, serial: tq.serial || undefined }),
@@ -338,7 +411,8 @@ const SurgicalPage: React.FC = () => {
   return (
     <div className="g2 g2-embed">
       <PageHeader title="Surgery Cases & Implants" description="Book surgeries with loaner or consignment sets, record which implant went into which patient, check kits back, sterilise, and trace any batch or serial for a recall."
-        actions={canEdit && <Button variant="primary" icon={<Stethoscope size={15} />} onClick={() => setNewCase(true)}>Book surgery case</Button>} />
+        actions={canBook && <Button variant="primary" icon={<Stethoscope size={15} />} onClick={() => setNewCase(true)}>Book surgery case</Button>} />
+      {!runCases && <Alert tone="info">Your partners run surgery cases. You see their cases read-only{partnerUsage ? '' : ' (usage sharing is off, so none are shown)'}, plus your sets and the implant register. Change this in Modules → Surgery Cases.</Alert>}
       <div className="g2-grid g2-grid-4" style={{ marginBottom: 16 }}>
         <KpiCard label="Upcoming surgeries" value={upcoming} icon={<CalendarClock size={22} />} color="#2563eb" bg="#eff6ff" foot={`${allCases.filter((c) => ['Kit dispatched', 'Surgery done', 'Kit returned'].includes(c.status)).length} case(s) in progress`} />
         <KpiCard label="Sets at hospitals" value={allSets.filter((s) => s.hospitalId).length} icon={<Briefcase size={22} />} color="#6d28d9" bg="#f5f3ff" foot={`${allSets.filter((s) => s.status === 'Available').length} available in warehouse`} />
@@ -347,11 +421,12 @@ const SurgicalPage: React.FC = () => {
       </div>
       <Card flush>
         <div className="g2-filterbar">
-          <Tabs active={tab} onChange={setTab} tabs={[{ id: 'cases', label: 'Surgery cases', count: allCases.length }, { id: 'sets', label: 'Instrument sets', count: allSets.length }, { id: 'register', label: 'Implant register & trace', count: reg.length }]} />
+          <Tabs active={tab} onChange={setTab} tabs={[{ id: 'cases', label: runCases ? 'Surgery cases' : 'Partner cases', count: visibleCases.length }, ...(showSets ? [{ id: 'sets', label: 'Instrument sets', count: allSets.length }] : []), ...(showRegister ? [{ id: 'register', label: 'Implant register & trace', count: reg.length }] : [])]} />
+          {tab === 'cases' && runCases && opt('surgical', 'caseRoles') && <Segmented options={ROLE_FILTERS} value={rf} onChange={setRf} />}
         </div>
         {tab === 'cases' && (
           <div className="g2-table-wrap"><table className="g2-table">
-            <thead><tr><th>Case</th><th>Hospital</th><th>Surgery</th><th>Served by</th><th>Sets</th><th>Status</th></tr></thead>
+            <thead><tr><th>Case</th><th>Hospital</th><th>Surgery</th><th>Owner · who does what</th><th>Sets</th><th>Status</th></tr></thead>
             <tbody>
               {allCases.length === 0 && <tr><td colSpan={6} className="g2-muted">No cases yet.</td></tr>}
               {allCases.map((c: SurgeryCase) => (
@@ -359,7 +434,9 @@ const SurgicalPage: React.FC = () => {
                   <td><div className="g2-strong">{c.code}</div><div className="g2-cell-sub">{c.procedure}</div></td>
                   <td>{c.hospitalName}<div className="g2-cell-sub">{c.surgeon}</div></td>
                   <td>{c.surgeryDate}</td>
-                  <td className="g2-small">{c.servedBy === 'COMPANY' ? 'Company direct' : c.partnerName}</td>
+                  <td className="g2-small">{c.servedBy === 'COMPANY' ? 'Company direct' : c.partnerName}
+                    {(() => { const r = rolesOf(c); const same = sameParty(r.goods, r.billing) && sameParty(r.goods, r.ot) && (c.servedBy === 'COMPANY' ? r.goods.kind === 'COMPANY' : r.goods.partnerId === c.partnerId); return same ? null : <div className="g2-cell-sub">Goods: {partyLabel(r.goods)}{r.goodsFrom === 'consignment' ? ' (consignment)' : ''} · OT: {partyLabel(r.ot)} · Bills: {partyLabel(r.billing)}</div>; })()}
+                  </td>
                   <td className="g2-small">{c.setIds.map((id) => getSet(id)?.code).join(', ')}</td>
                   <td><Badge tone={CASE_TONE[c.status]} dot>{c.status}</Badge></td>
                 </tr>
@@ -367,7 +444,7 @@ const SurgicalPage: React.FC = () => {
             </tbody>
           </table></div>
         )}
-        {tab === 'sets' && (
+        {tab === 'sets' && showSets && (
           <div className="g2-table-wrap"><table className="g2-table">
             <thead><tr><th>Set</th><th>Type</th><th>Where</th><th style={{ textAlign: 'right' }}>Implants</th><th style={{ textAlign: 'right' }}>Cycles</th><th>Status</th></tr></thead>
             <tbody>{allSets.map((s) => {
@@ -385,7 +462,7 @@ const SurgicalPage: React.FC = () => {
             })}</tbody>
           </table></div>
         )}
-        {tab === 'register' && (
+        {tab === 'register' && showRegister && (
           <div style={{ padding: 16 }} className="g2-stack">
             <div className="g2-row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <div style={{ width: 300 }}><SearchableSelect value={tq.productId} clearable placeholder="Any product" options={products.filter((p) => p.regulatory?.implantable).map((p) => ({ value: p.id, label: p.name, description: p.code }))} onChange={(v) => setTq({ ...tq, productId: v ?? '' })} /></div>
@@ -417,7 +494,7 @@ const SurgicalPage: React.FC = () => {
         )}
       </Card>
       {newCase && <NewCaseDrawer onClose={() => setNewCase(false)} onOpen={setOpenCase} />}
-      {openCase && <CaseDrawer id={openCase} canEdit={canEdit} onClose={() => setOpenCase(null)} />}
+      {openCase && <CaseDrawer id={openCase} canEdit={canEdit && runCases && (() => { const c = getCase(openCase); return !!c && involved(c); })()} onClose={() => setOpenCase(null)} />}
       {openSet && <SetDrawer id={openSet} canEdit={canEdit} hospitalName={hName} onClose={() => setOpenSet(null)} />}
       {card && <ImplantCard r={card} manufacturer={manufacturer(card.productId)} onClose={() => setCard(null)} />}
       {explant && (

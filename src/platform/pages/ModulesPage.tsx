@@ -1,6 +1,8 @@
 import React from 'react';
 import { Blocks, Lock } from 'lucide-react';
-import { Badge, Card, PageHeader, Switch } from '../ui';
+import { Badge, Card, PageHeader, Select, Switch } from '../ui';
+import { MODULE_OPTIONS, optValue, opt, setOption, subscribeOptions } from '../moduleOptions';
+import { useSubscribe } from '../useStore';
 import { MODULES } from '../modules';
 import type { ModuleManifest } from '../modules';
 import { usePlatform } from '../PlatformContext';
@@ -9,6 +11,7 @@ import { useApp } from '../../context/AppContext.tsx';
 /** Settings → Modules: switch modules on/off for the active principal. */
 const ModulesPage: React.FC = () => {
   const { enabled, setEnabled } = usePlatform();
+  useSubscribe(subscribeOptions);
   const { currentUser, activePrincipal, showToast, workspace } = useApp();
   const canEdit = !!currentUser.permissions.canConfigurePlatform;
   const name = (id: string) => MODULES.find((m) => m.id === id)?.name ?? id;
@@ -36,12 +39,31 @@ const ModulesPage: React.FC = () => {
             <Switch checked={on} disabled={!canEdit} label={`${m.name} on/off`} onChange={(v) => { const r = setEnabled(m.id, v, currentUser.name); showToast(r.message, r.ok ? 'success' : 'warning'); }} />
           )}
         </div>
+        {on && MODULE_OPTIONS[m.id] && (
+          <div style={{ marginTop: 12, borderTop: '1px solid var(--g2-border)', paddingTop: 10, display: 'grid', gap: 8 }}>
+            <div className="g2-small g2-muted" style={{ fontWeight: 600 }}>Options</div>
+            {MODULE_OPTIONS[m.id]!.map((o) => {
+              const blocked = !!o.requires && !opt(m.id, o.requires);
+              return (
+                <div key={o.key} className="g2-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', opacity: blocked ? 0.5 : 1 }} title={o.help}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13 }}>{o.label}</div>
+                    {o.help && <div className="g2-small g2-muted">{o.help}</div>}
+                  </div>
+                  {o.type === 'bool'
+                    ? <Switch checked={optValue(m.id, o.key) === true} disabled={!canEdit || blocked} label={o.label} onChange={(v) => setOption(m.id, o.key, v)} />
+                    : <Select value={String(optValue(m.id, o.key))} disabled={!canEdit} options={(o.choices ?? []).map((c) => ({ value: c.value, label: c.label }))} onChange={(v) => setOption(m.id, o.key, v)} style={{ width: 200 }} />}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
   return (
     <div className="g2 g2-embed">
-      <PageHeader title="Modules" description={<>Plug-and-play modules for <strong>{activePrincipal.name}</strong>. Switching a module off hides its screens; modules that depend on it must be switched off first.</>} />
+      <PageHeader title="Modules" description={<>Plug-and-play modules for <strong>{activePrincipal.name}</strong>. Switching a module off hides its screens; modules that depend on it must be switched off first. New principal? Start with the <a href="/setup">Setup checklist</a>.</>} />
       {!canEdit && <div className="g2-small" style={{ color: '#b45309', marginBottom: 12 }}>Only users with configuration rights can switch modules.</div>}
       <Card title={<span className="g2-row"><Blocks size={16} /> Available</span>}>
         <div className="g2-grid g2-grid-2">{MODULES.filter((m) => m.status === 'available' && (!m.industries?.length || m.industries.includes(workspace))).map(card)}</div>

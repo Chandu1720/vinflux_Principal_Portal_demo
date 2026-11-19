@@ -145,7 +145,7 @@ export const processEmail = (id: string, ctx: OrderCtx, principalId: string, war
     principalId, partner: p, channelId: null, orderType: transfer ? 'Stock transfer' : 'Sale', shipFrom,
     poNumber: parsed.po ?? `EMAIL-${e.id.slice(-5).toUpperCase()}`, poDate: e.receivedAt.slice(0, 10), requiredBy: inDays(4), source: 'Email', notes: e.subject, emailId: e.id,
     lines: matched.map((l) => priceLine(ctx, p.id, principalId, l.hit!.productId, l.hit!.variantSku, l.qty, transfer)),
-  }, by, ctx);
+  }, by === 'System' ? 'Email intake' : `Email intake (${by})`, ctx);
   if (!r.ok || !r.id) {
     putEmail({ ...e, status: 'Unmatched', partnerId: p.id, issues: r.errors ?? [r.message] });
     return { ok: false, message: r.message };
@@ -154,7 +154,7 @@ export const processEmail = (id: string, ctx: OrderCtx, principalId: string, war
   // Remember the code mappings people made so the next email from anyone matches automatically.
   if (Object.keys(e.codeMap).length) commit({ ...box(), aliases: { ...box().aliases, ...Object.fromEntries(Object.entries(e.codeMap).map(([k, v]) => [k.toLowerCase(), v])) } });
   putEmail({ ...getEmail(id)!, status: 'Order created', partnerId: p.id, orderId: r.id, issues: [], reply: `Order received as ${o.code} (your PO ${o.poNumber}). We'll confirm quantities and dispatch date shortly.` });
-  return { ok: true, message: `${o.code} created from the email — ${o.status === 'Validated' ? 'validated' : o.status === 'On hold' ? 'on credit hold' : 'needs attention'}.`, orderId: r.id };
+  return { ok: true, message: `${o.code} created from the email — ${o.status === 'Validated' ? 'validated' : o.status === 'Confirmed' ? 'confirmed automatically' : o.status === 'Awaiting approval' ? 'waiting for approval' : o.status === 'Awaiting partner' ? 'part-fill choice sent to the partner' : o.status === 'On hold' ? 'on credit hold' : 'needs attention'}.`, orderId: r.id };
 };
 
 /** Process every new email in the mailbox. */
@@ -195,3 +195,8 @@ export const simulateEmail = (ctx: OrderCtx, principalId: string) => {
   const codes = prods.slice(0, 1 + Math.floor(Math.random() * Math.min(2, prods.length))).map((x) => `${x.variants[0]?.sku ?? x.code} x ${1 + Math.floor(Math.random() * 4)}`);
   return receiveEmail({ from, fromName: p.portalUsers?.[0]?.name ?? p.contactPerson ?? p.name, subject: `Purchase order PO/${p.code}/${n}`, body: `Dear team,\n\nPlease supply the following against PO/${p.code}/${n}:\n\n${codes.join('\n')}\n\nDeliver at the earliest.\n\nThanks,\n${p.contactPerson ?? p.name}` });
 };
+
+/** Code → product mappings people made (shared by email intake and uploads). */
+export const aliasFor = (code: string) => box().aliases[code.trim().toLowerCase()] ?? null;
+export const rememberAliases = (map: Record<string, { productId: string; variantSku: string | null }>) =>
+  commit({ ...box(), aliases: { ...box().aliases, ...Object.fromEntries(Object.entries(map).map(([k, v]) => [k.trim().toLowerCase(), v])) } });

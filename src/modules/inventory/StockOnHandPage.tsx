@@ -15,6 +15,7 @@ import { claims, inTransit, reservations, subscribeOrders } from '../orders/orde
 import { GoodsTab, SourceSettingsTab } from './StockSettings';
 import { adjustments, subscribeSource } from './stockSource';
 import { usePlatform } from '../../platform/PlatformContext';
+import { opt, subscribeOptions } from '../../platform/moduleOptions';
 
 const daysLeft = (iso: string | null) => (iso ? Math.round((Date.parse(iso) - Date.now()) / 86400000) : null);
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -31,7 +32,7 @@ const expiryAction = (b: StockBalance, d: number) => {
 };
 
 const StockOnHandPage: React.FC = () => {
-  useSubscribe(subscribeStock, subscribeOrders, subscribeConnectors, subscribeSource);
+  useSubscribe(subscribeStock, subscribeOrders, subscribeConnectors, subscribeSource, subscribeOptions);
   const { enabled } = usePlatform();
   const navigate = useNavigate();
   const imp = useImportContext();
@@ -115,8 +116,8 @@ const StockOnHandPage: React.FC = () => {
           <Tabs active={tab} onChange={setTab} tabs={[
             { id: 'stock', label: 'Stock by location', count: bal.length },
             { id: 'atp', label: 'Available to promise' },
-            { id: 'channel', label: 'Channel stock', count: channel.length || undefined },
-            { id: 'expiry', label: 'Expiry', count: near.length || undefined },
+            ...(opt('inventory', 'partnerStock') ? [{ id: 'channel', label: 'Channel stock', count: channel.length || undefined }] : []),
+            ...(opt('inventory', 'expiry') ? [{ id: 'expiry', label: 'Expiry', count: near.length || undefined }] : []),
             { id: 'goods', label: 'Goods receipts & adjustments', count: adjustments().filter((a) => a.status === 'Pending').length || undefined },
             { id: 'recon', label: 'Reconciliation', count: mismatches || undefined },
             { id: 'ledger', label: 'Ledger', count: mv.length },

@@ -1,7 +1,10 @@
 /**
- * Order management (principal side) — one simple flow:
+ * Order management (principal side) — one flow, every policy configurable per principal (orderSettings.ts):
  *
- *   Received ─► Validated ─► Confirmed ─► Shipped ─► Completed
+ *   Received ─► [Awaiting approval] ─► Validated ─► [Awaiting partner] ─► Confirmed ─► Shipped ─► Completed
+ *   approval only when one of the principal's rules hits; confirmation is automatic when everything is in stock
+ *   (if auto-confirm is on); a shortfall asks the partner to choose (ship available now / wait / accept proposed).
+ *
  *      │            │            │            │           └ all shipments delivered (proof of delivery)
  *      │            │            │            └ shipment created: invoice (ERP or C&F) + e-way bill + carrier, stock leaves
  *      │            │            └ quantities reserved automatically, partner notified, ERP sales order created
@@ -16,6 +19,7 @@ import type { GtmConfiguration, Partner, PartnerFlowMapping, SalesChannel, Sales
 import { creditOf, tradeStatusOf } from '../gtm-v2/utils/health';
 import { partnerChannelId } from '../gtm-v2/utils/eligibility';
 import { emit } from '../../platform/events';
+import { optChoice } from '../../platform/moduleOptions';
 import { loadJson, newId, saveJson } from '../../platform/store';
 import { workspaceKey } from '../../platform/workspace';
 import { balances, post } from '../inventory/stockStore';
@@ -26,14 +30,23 @@ import { erpDocNo, erpProfile } from '../../platform/integrations/erpProfiles';
 import { callErp, isLive } from '../../platform/integrations/liveClient';
 import { connectorSettings } from '../../platform/integrations/connectors';
 import type { StockSource } from '../inventory/stockSource';
+import { orderSettings } from './orderSettings';
+import type { ApprovalRule } from './orderSettings';
+import { compose } from './notify';
+import type { Notice } from './notify';
+import type { NotifyEvent } from './orderSettings';
 
-export type OrderStatus = 'Received' | 'Validated' | 'On hold' | 'Confirmed' | 'Shipped' | 'Completed' | 'Rejected' | 'Cancelled';
+export type OrderStatus = 'Received' | 'Awaiting approval' | 'Validated' | 'Awaiting partner' | 'On hold' | 'Confirmed' | 'Shipped' | 'Completed' | 'Rejected' | 'Cancelled';
+/** Statuses before confirmation (the order can still be changed freely by the desk). */
+export const OPEN: OrderStatus[] = ['Received', 'On hold', 'Awaiting approval', 'Validated', 'Awaiting partner'];
 export const FLOW: OrderStatus[] = ['Received', 'Validated', 'Confirmed', 'Shipped', 'Completed'];
-export type OrderSource = 'Email' | 'Portal' | 'Field app' | 'Phone' | 'EDI';
+export type OrderSource = 'Email' | 'Portal' | 'Field app' | 'Phone' | 'EDI' | 'Excel' | 'PDF' | 'Manual';
 export interface OrderLine {
   id: string; productId: string; variantSku: string | null; name: string; qty: number;
   confirmedQty: number; shippedQty: number; backorderQty: number; backorderDate: string | null; substituteFor: string | null;
   unitPrice: number | null; netUnit: number | null; gstPct: number; freeQty: number; priceSource: string;
+  /** Price on the partner's PO (uploads) and the partner's own item code. */
+  poPrice?: number | null; partnerCode?: string | null;
 }
 export interface Allocation { lineId: string; bin?: string; productId: string; variantSku: string | null; batch: string; serial: string | null; mfgDate: string | null; expiryDate: string | null; qty: number; unitCost: number | null }
 export interface Shipment {
@@ -69,6 +82,20 @@ export interface Order {
   rejectReason: string | null;
   createdBy: string; createdAt: string;
   history: { at: string; by: string; action: string; note?: string }[];
+  partnerEmail?: string | null;
+  /** Who keyed it in for the partner (manual / upload / field app). */
+  enteredFor?: string | null;
+  attachment?: { name: string; kind: 'Excel' | 'PDF' | 'CSV' } | null;
+  /** Approval by the principal's rules, level by level. */
+  approval?: {
+    ruleIds: string[]; reasons: string[]; levels: string[]; step: number; stepSince: string; done: boolean;
+    decisions: { level: string; by: string; at: string; decision: 'Approved' | 'Rejected'; note: string }[];
+  } | null;
+  /** Part-fill choice put to the partner. */
+  partFill?: { askedAt: string; proposal: Record<string, number>; answer: 'ship-available' | 'wait' | 'accept-proposed' | null; answeredBy?: string; answeredAt?: string; via?: 'Partner link' | 'Order desk' | 'No reply (default)' } | null;
+  version?: number;
+  versions?: { v: number; at: string; by: string; reason: string; changes: string[] }[];
+  notifications?: Notice[];
 }
 
 /* -------------------------------- Context -------------------------------- */
@@ -88,6 +115,7 @@ const daysTo = (iso: string | null) => (iso ? Math.round((Date.parse(iso) - Date
 
 /** Where a partner's company orders come from: company warehouse, a C&F depot (agent), or a reseller (not a company order). */
 export const routeOf = (partnerId: string, ctx: Pick<OrderCtx, 'mappings' | 'channels' | 'partners'>) => {
+  if (orderSettings().sources.policies === 'none') return { ok: true as const, shipFrom: { locType: 'COMPANY' as const, id: '', name: '' }, text: 'Sales policies not used — every order goes to the company' };
   const links = ctx.mappings.filter((m) => m.partnerId === partnerId && m.status === 'Active').flatMap((m) => m.suppliers ?? []);
   const viaCompany = links.find((l) => l.kind === 'COMPANY');
   if (viaCompany) return { ok: true as const, shipFrom: { locType: 'COMPANY' as const, id: viaCompany.warehouseId ?? '', name: '' }, text: 'Buys directly from the company' };
@@ -114,9 +142,12 @@ export const minShelfDays = (p: Product | undefined, institution: boolean) => (i
 /** Reserved by confirmed orders not yet shipped, per location × product × variant. */
 export const reservations = (exceptOrderId?: string) => {
   const m = new Map<string, number>();
-  orders().filter((o) => o.id !== exceptOrderId && o.status === 'Confirmed').forEach((o) => o.lines.forEach((l) => {
+  const point = orderSettings().reservation;
+  const before: OrderStatus[] = point === 'submission' ? ['Received', 'On hold', 'Awaiting approval', 'Validated', 'Awaiting partner'] : point === 'approval' ? ['Validated', 'Awaiting partner'] : [];
+  orders().filter((o) => o.id !== exceptOrderId && (o.status === 'Confirmed' || before.includes(o.status))).forEach((o) => o.lines.forEach((l) => {
     const k = `${o.shipFrom.id}|${l.productId}|${l.variantSku ?? ''}`;
-    m.set(k, (m.get(k) ?? 0) + Math.max(0, l.confirmedQty + l.freeQty - l.shippedQty));
+    const q = o.status === 'Confirmed' ? l.confirmedQty + l.freeQty - l.shippedQty : o.partFill?.proposal[l.id] ?? l.qty + l.freeQty;
+    m.set(k, (m.get(k) ?? 0) + Math.max(0, q));
   }));
   return m;
 };
@@ -145,15 +176,17 @@ export const evaluate = (o: Order, ctx: OrderCtx): Check[] => {
   out.push({ id: 'relationship', label: 'Relationship active', state: p.status === 'Active' ? 'pass' : 'fail', detail: p.status === 'Active' ? 'Partner is active' : `Partner is ${p.status}` });
   const lic = ts.reasons.filter((r) => /expired|validity|expires/.test(r.text));
   const licBlocked = lic.some((r) => r.tone === 'red');
-  out.push({ id: 'licence', label: 'Partner licences valid', state: licBlocked ? 'fail' : lic.length ? 'warn' : 'pass', detail: lic.length ? lic.map((r) => r.text).join('; ') : 'All tracked licences valid' });
+  const licMode = optChoice('orders', 'licenceCheck');
+  if (licMode !== 'off') out.push({ id: 'licence', label: 'Partner licences valid', state: licBlocked ? (licMode === 'warn' ? 'warn' : 'fail') : lic.length ? 'warn' : 'pass', detail: lic.length ? lic.map((r) => r.text).join('; ') : 'All tracked licences valid' });
   const route = routeOf(p.id, ctx);
   out.push({ id: 'route', label: 'Sales route', state: route.ok ? 'pass' : 'fail', detail: route.text });
+  const sources = orderSettings().sources;
   const flows = ctx.flows.filter((f) => p.flowIds.includes(f.id) && f.status === 'Active');
   const unauthorised = o.lines.filter((l) => {
     const prod = ctx.products.find((x) => x.id === l.productId);
     return !flows.some((f) => f.productScope.allProducts || f.productScope.productIds.includes(l.productId) || (!!prod && (f.productScope.portfolioIds.includes(prod.portfolioId) || f.productScope.categoryIds.includes(prod.categoryId))));
   });
-  if (o.orderType === 'Stock transfer') unauthorised.length = 0;
+  if (o.orderType === 'Stock transfer' || sources.policies === 'none') unauthorised.length = 0;
   out.push({ id: 'authorised', label: 'Products authorised', state: unauthorised.length ? 'fail' : 'pass', detail: unauthorised.length ? `Not in the partner’s sales policies: ${unauthorised.map((l) => l.name).join(', ')}` : 'All products are in the partner’s sales policies' });
   const prodIssues = o.lines.flatMap((l) => {
     const prod = ctx.products.find((x) => x.id === l.productId);
@@ -191,6 +224,10 @@ export const evaluate = (o: Order, ctx: OrderCtx): Check[] => {
   if (c.state === 'hold') credit = { ...credit, state: 'hold', detail: `On credit hold: ${p.credit?.hold?.reason}` };
   else if (c.limit > 0 && c.outstanding + value > c.limit) credit = { ...credit, state: cfg.blockWhenOverLimit ? 'hold' : 'warn', detail: `Over limit by ₹${((c.outstanding + value - c.limit) / 100000).toFixed(2)} L (outstanding ₹${(c.outstanding / 100000).toFixed(1)} L + this order)` };
   else if (c.overdue > 0) credit = { ...credit, state: cfg.blockWhenOverdue ? 'hold' : 'warn', detail: `Overdue ₹${(c.overdue / 100000).toFixed(1)} L` };
+  if (sources.credit === 'none') credit = { id: 'credit', label: 'Credit', state: 'pass', detail: 'Credit check not used (Orders → Settings → Data sources)' };
+  const creditMode = optChoice('orders', 'creditCheck');
+  if (creditMode === 'off') credit = { id: 'credit', label: 'Credit', state: 'pass', detail: 'Credit check switched off (Modules → Order Management)' };
+  else if (creditMode === 'warn' && credit.state === 'hold') credit = { ...credit, state: 'warn', detail: `${credit.detail} — warning only` };
   if ((credit.state === 'hold') && o.creditRelease) credit = { ...credit, state: 'warn', detail: `${credit.detail} — released for this order by ${o.creditRelease.by}` };
   out.push(credit);
   const inst = !!p.institution;
@@ -223,27 +260,166 @@ export const subscribeOrders = (l: () => void) => { listeners.add(l); return () 
 export const orders = () => db().orders;
 export const claims = () => db().claims;
 export const getOrder = (id: string) => db().orders.find((o) => o.id === id) ?? null;
-const put = (o: Order) => { const d = db(); commit({ ...d, orders: d.orders.some((x) => x.id === o.id) ? d.orders.map((x) => (x.id === o.id ? o : x)) : [o, ...d.orders] }); };
-const log = (o: Order, by: string, action: string, note?: string): Order => ({ ...o, history: [...o.history, { at: now(), by, action, note }] });
+export const put = (o: Order) => { const d = db(); commit({ ...d, orders: d.orders.some((x) => x.id === o.id) ? d.orders.map((x) => (x.id === o.id ? o : x)) : [o, ...d.orders] }); };
+export const log = (o: Order, by: string, action: string, note?: string): Order => ({ ...o, history: [...o.history, { at: now(), by, action, note }] });
 type Result = { ok: boolean; message: string; errors?: string[] };
 export const inTransit = () => db().orders.flatMap((o) => o.shipments.filter((s) => !s.deliveredAt).map((s) => ({ order: o, shipment: s })));
 
-/** Run the checks and move the order to Validated, On hold (credit) or keep it Received (blocked). */
+/** Append the messages an event produces (per the principal's notification settings) to the order. */
+export const withNotice = (o: Order, event: NotifyEvent, vars: Record<string, string | number | undefined> = {}): Order => {
+  const n = compose(o, event, vars, orderValue(o, !OPEN.includes(o.status)));
+  return n.length ? { ...o, notifications: [...(o.notifications ?? []), ...n] } : o;
+};
+
+/** Which of the principal's approval rules this order hits (stock transfers never need approval). */
+export const approvalHits = (o: Order): { rule: ApprovalRule; reason: string }[] => {
+  if (o.orderType === 'Stock transfer') return [];
+  const value = orderValue(o);
+  const prior = orders().filter((x) => x.partnerId === o.partnerId && x.id !== o.id && !['Rejected', 'Cancelled'].includes(x.status) && x.createdAt <= o.createdAt).length;
+  return orderSettings().approval.rules.filter((r) => r.enabled).flatMap((r) => {
+    if (r.kind === 'value' && value > r.threshold) return [{ rule: r, reason: `Order value ₹${Math.round(value).toLocaleString('en-IN')} is above ₹${r.threshold.toLocaleString('en-IN')}` }];
+    if (r.kind === 'discount') {
+      const deep = o.lines.filter((l) => l.unitPrice && l.netUnit !== null && ((l.unitPrice - l.netUnit) / l.unitPrice) * 100 > r.threshold);
+      return deep.length ? [{ rule: r, reason: `Discount above ${r.threshold}% on ${deep.map((l) => l.name).join(', ')}` }] : [];
+    }
+    if (r.kind === 'priceChange') {
+      const po = o.lines.filter((l) => l.priceSource.startsWith('PO price'));
+      return po.length ? [{ rule: r, reason: `PO price used instead of the price list on ${po.map((l) => l.name).join(', ')}` }] : [];
+    }
+    if (r.kind === 'newPartner' && prior < r.threshold) return [{ rule: r, reason: `${o.partnerName}'s order ${prior + 1} of the first ${r.threshold}` }];
+    if (r.kind === 'partnerType' && r.partnerTypeIds.includes(o.partnerTypeId)) return [{ rule: r, reason: 'Partner type needs approval' }];
+    return [];
+  });
+};
+/** Approvers in sequence for a set of hits: every rule's levels, in order, without repeats. */
+const levelsOf = (hits: { rule: ApprovalRule }[]) => hits.flatMap((h) => h.rule.levels).filter((x, i, a) => x && a.indexOf(x) === i);
+
+/** Run the checks and move the order on: Received (a check fails), On hold (credit), Awaiting approval (a rule hits), else Validated → auto-confirm. */
 export const validate = (id: string, ctx: OrderCtx, by: string): Result => {
   const o = getOrder(id);
-  if (!o || !['Received', 'On hold', 'Validated'].includes(o.status)) return { ok: false, message: 'Only open orders are validated.' };
+  if (!o || !['Received', 'On hold', 'Validated', 'Awaiting approval'].includes(o.status)) return { ok: false, message: 'Only open orders are validated.' };
   const checks = evaluate(o, ctx);
   const fails = checks.filter((c) => c.state === 'fail').map((c) => `${c.label}: ${c.detail}`);
   const holds = checks.filter((c) => c.state === 'hold').map((c) => `${c.label}: ${c.detail}`);
-  const status: OrderStatus = fails.length ? 'Received' : holds.length ? 'On hold' : 'Validated';
-  if (status === o.status && JSON.stringify(o.blockers) === JSON.stringify([...fails, ...holds])) return { ok: status === 'Validated', message: status };
-  put(log({ ...o, status, blockers: [...fails, ...holds] }, by, status === 'Validated' ? 'Validated — partner and credit checks passed' : status === 'On hold' ? 'On hold — credit' : 'Checks failed', [...fails, ...holds].join(' · ') || undefined));
-  return { ok: status === 'Validated', message: status === 'Validated' ? `${o.code} validated.` : status === 'On hold' ? `${o.code} is on credit hold — Finance can release it.` : `${o.code} fails a check.` };
+  const hits = fails.length || holds.length ? [] : approvalHits(o);
+  const approved = new Set(o.approval?.done ? o.approval.ruleIds : []);
+  const pending = hits.filter((h) => !approved.has(h.rule.id));
+  const status: OrderStatus = fails.length ? 'Received' : holds.length ? 'On hold' : pending.length ? 'Awaiting approval' : 'Validated';
+  const blockers = [...fails, ...holds, ...pending.map((h) => `Approval: ${h.reason}`)];
+  if (status === o.status && JSON.stringify(o.blockers) === JSON.stringify(blockers)) return { ok: status === 'Validated', message: status };
+  let next: Order = log({ ...o, status, blockers }, by,
+    status === 'Validated' ? (o.approval?.done ? 'Validated — checks passed and approved' : 'Validated — partner and credit checks passed') : status === 'On hold' ? 'On hold — credit' : status === 'Awaiting approval' ? `Waiting for approval — ${levelsOf(pending).join(' → ')}` : 'Checks failed',
+    blockers.join(' · ') || undefined);
+  if (status === 'Awaiting approval' && o.status !== 'Awaiting approval') {
+    const levels = levelsOf(pending);
+    next = { ...next, approval: { ruleIds: hits.map((h) => h.rule.id), reasons: pending.map((h) => h.reason), levels, step: 0, stepSince: now(), done: false, decisions: [] } };
+    next = withNotice(next, 'approval', { reason: pending.map((h) => h.reason).join('; '), internalTo: levels[0] });
+  }
+  if (status === 'On hold' && o.status !== 'On hold') next = withNotice(next, 'hold', { reason: holds.join('; ') });
+  put(next);
+  if (status === 'Validated' && o.status !== 'Validated') {
+    const ac = autoConfirm(id, ctx);
+    if (ac) return ac;
+  }
+  return { ok: status === 'Validated', message: status === 'Validated' ? `${o.code} validated.` : status === 'On hold' ? `${o.code} is on credit hold — Finance can release it.` : status === 'Awaiting approval' ? `${o.code} needs approval: ${pending.map((h) => h.reason).join('; ')}.` : `${o.code} fails a check.` };
+};
+
+/** Shortfall per line at the ship-from location (empty = everything is available). */
+export const shortfall = (o: Order, ctx: OrderCtx) => {
+  if (shipFromSource(o, ctx) === 'NONE') return {} as Record<string, number>;
+  const inst = !!ctx.partners.find((p) => p.id === o.partnerId)?.institution;
+  return Object.fromEntries(o.lines.map((l) => [l.id, atp(o.shipFrom.id, l.productId, l.variantSku, minShelfDays(ctx.products.find((x) => x.id === l.productId), inst), o.id)])
+    .filter(([id, a]) => { const l = o.lines.find((x) => x.id === id)!; return (a as number) < l.qty + l.freeQty; })) as Record<string, number>;
+};
+
+/** After validation: confirm on its own when everything is in stock; on a shortfall put the part-fill choice to the partner. */
+const autoConfirm = (id: string, ctx: OrderCtx): Result | null => {
+  const s = orderSettings();
+  const o = getOrder(id);
+  if (!o || o.status !== 'Validated' || !s.autoConfirm) return null;
+  if (shipFromSource(o, ctx) === 'NONE') return null; // no stock figure: the desk confirms (or "confirm as ordered")
+  const short = shortfall(o, ctx);
+  if (!Object.keys(short).length) {
+    const r = confirmOrder(id, Object.fromEntries(o.lines.map((l) => [l.id, { confirm: l.qty, backorderDate: null, substituteSku: null }])), ctx, 'System (auto-confirm)');
+    return r.ok ? { ok: true, message: `${o.code} confirmed automatically — everything in stock.` } : null;
+  }
+  if (s.partFill.mode === 'partner') return askPartFill(id, ctx, 'System');
+  return null;
+};
+
+/** Put the part-fill choice to the partner: what can ship now per line. */
+export const askPartFill = (id: string, ctx: OrderCtx, by: string): Result => {
+  const o = getOrder(id);
+  if (!o || o.status !== 'Validated') return { ok: false, message: 'Only validated orders can ask the partner.' };
+  const short = shortfall(o, ctx);
+  const proposal = Object.fromEntries(o.lines.map((l) => [l.id, l.id in short ? Math.max(0, Math.min(l.qty, short[l.id])) : l.qty]));
+  const lines = o.lines.map((l) => ({ ...l, confirmedQty: proposal[l.id] ?? l.qty, backorderQty: l.qty - (proposal[l.id] ?? l.qty) }));
+  let next = log({ ...o, status: 'Awaiting partner', partFill: { askedAt: now(), proposal, answer: null } }, by, 'Part of the order is available — partner asked to choose',
+    o.lines.filter((l) => l.id in short).map((l) => `${l.name}: ${proposal[l.id]} of ${l.qty} now`).join('; '));
+  next = withNotice({ ...next, lines }, 'partfill');
+  put({ ...next, lines: o.lines });
+  return { ok: true, message: `${o.code}: only part is in stock — ${o.partnerName} was asked to choose (ship now / wait / accept proposed).` };
+};
+
+/** The partner's answer (by link, through the desk, or the no-reply default). */
+export const answerPartFill = (id: string, answer: 'ship-available' | 'wait' | 'accept-proposed', via: NonNullable<Order['partFill']>['via'], ctx: OrderCtx, by: string): Result => {
+  const o = getOrder(id);
+  if (!o || o.status !== 'Awaiting partner' || !o.partFill) return { ok: false, message: 'This order is not waiting for the partner.' };
+  const pf = { ...o.partFill, answer, answeredBy: by, answeredAt: now(), via };
+  const text = answer === 'ship-available' ? 'Ship what is available now, rest on backorder' : answer === 'accept-proposed' ? 'Accept the proposed quantity (rest cancelled)' : 'Wait for the complete order';
+  put(log({ ...o, partFill: pf, status: 'Validated' }, by, `Partner’s choice: ${text}`, via));
+  if (answer === 'wait') {
+    put(log({ ...getOrder(id)! }, 'System', 'Waiting for stock — confirm when the complete order is available'));
+    return { ok: true, message: `${o.code}: partner waits for the complete order.` };
+  }
+  const bo = new Date(Date.now() + orderSettings().partFill.backorderDays * 86400000).toISOString().slice(0, 10);
+  const r = confirmOrder(id, Object.fromEntries(o.lines.map((l) => [l.id, { confirm: o.partFill!.proposal[l.id] ?? l.qty, backorderDate: answer === 'ship-available' ? bo : null, substituteSku: null, dropRest: answer === 'accept-proposed' }])), ctx, by);
+  if (!r.ok) { put(log({ ...getOrder(id)!, status: 'Awaiting partner', partFill: o.partFill }, 'System', 'Could not confirm the partner’s choice', [r.message, ...(r.errors ?? [])].join(' '))); return r; }
+  return { ok: true, message: `${o.code}: ${text.toLowerCase()} — confirmed.` };
+};
+
+/** Apply the no-reply default to part-fill questions older than the reply window. */
+export const applyPartFillTimeouts = (ctx: OrderCtx, force = false) => {
+  const s = orderSettings().partFill;
+  return orders().filter((o) => o.status === 'Awaiting partner' && o.partFill && (force || Date.now() - Date.parse(o.partFill.askedAt) > s.replyHours * 3600000))
+    .map((o) => answerPartFill(o.id, s.onTimeout, 'No reply (default)', ctx, 'System'));
+};
+
+/** Can this user act on the order's current approval level? */
+export const canApproveLevel = (o: Order, user: { name: string; role: string }) => {
+  const a = o.approval;
+  if (!a || a.done) return { ok: false, why: 'Nothing to approve.' };
+  const roles = user.role.split(',').map((x) => x.trim());
+  const level = a.levels[a.step];
+  const overdue = Date.now() - Date.parse(a.stepSince) > orderSettings().approval.escalateHours * 3600000;
+  if (o.createdBy === user.name) return { ok: false, why: 'Maker-checker: you entered this order, so someone else approves it.' };
+  if (roles.includes(level) || roles.includes('Administrator') || (overdue && roles.includes(a.levels[a.step + 1] ?? 'Administrator'))) return { ok: true, why: '' };
+  return { ok: false, why: `Waiting for ${level}.` };
+};
+export const approvalOverdue = (o: Order) => !!o.approval && !o.approval.done && Date.now() - Date.parse(o.approval.stepSince) > orderSettings().approval.escalateHours * 3600000;
+
+/** Approve the current level; the last level validates the order again (and auto-confirms). */
+export const approveOrder = (id: string, note: string, ctx: OrderCtx, user: { name: string; role: string }): Result => {
+  const o = getOrder(id);
+  if (!o || o.status !== 'Awaiting approval' || !o.approval) return { ok: false, message: 'This order is not waiting for approval.' };
+  const can = canApproveLevel(o, user);
+  if (!can.ok) return { ok: false, message: can.why };
+  const a = o.approval;
+  const level = a.levels[a.step];
+  const decisions = [...a.decisions, { level, by: user.name, at: now(), decision: 'Approved' as const, note }];
+  const last = a.step + 1 >= a.levels.length;
+  let next = log({ ...o, approval: { ...a, decisions, step: a.step + 1, stepSince: now(), done: last } }, user.name, `Approved (${level})${last ? '' : ` — next: ${a.levels[a.step + 1]}`}`, note || undefined);
+  if (!last) next = withNotice(next, 'approval', { reason: a.reasons.join('; '), internalTo: a.levels[a.step + 1] });
+  put(next);
+  if (!last) return { ok: true, message: `Approved — now waiting for ${a.levels[a.step + 1]}.` };
+  const r = validate(id, ctx, user.name);
+  return { ok: true, message: `Approved. ${r.message}` };
 };
 
 export interface NewOrderInput {
   principalId: string; partner: Partner; channelId: string | null; orderType: Order['orderType'];
   shipFrom: Order['shipFrom']; poNumber: string; poDate: string; requiredBy: string; source: OrderSource; notes: string; emailId?: string | null;
+  enteredFor?: string | null; attachment?: Order['attachment'];
   lines: Omit<OrderLine, 'id' | 'confirmedQty' | 'shippedQty' | 'backorderQty' | 'backorderDate' | 'substituteFor'>[];
 }
 export const createOrder = (n: NewOrderInput, by: string, ctx: OrderCtx | null, parentId: string | null = null): Result & { id?: string } => {
@@ -260,9 +436,12 @@ export const createOrder = (n: NewOrderInput, by: string, ctx: OrderCtx | null, 
     orderType: n.orderType, shipFrom: n.shipFrom, poNumber: n.poNumber, poDate: n.poDate, requiredBy: n.requiredBy, source: n.source, notes: n.notes, emailId: n.emailId ?? null,
     lines: n.lines.map((l) => ({ ...l, id: newId('ol'), confirmedQty: 0, shippedQty: 0, backorderQty: 0, backorderDate: null, substituteFor: null })),
     status: 'Received', blockers: [], creditRelease: null, erpSalesOrder: null, shipments: [], parentId, rejectReason: null, createdBy: by, createdAt: today(),
-    history: [{ at: now(), by, action: parentId ? 'Backorder released as a new order' : `Order received (${n.source})` }],
+    history: [{ at: now(), by, action: parentId ? 'Backorder released as a new order' : `Order received (${n.source}${n.attachment ? ` — ${n.attachment.name}` : ''})`, note: n.enteredFor ? `Entered by ${by} for ${n.partner.name}` : undefined }],
+    partnerEmail: n.partner.email ?? null, enteredFor: n.enteredFor ?? null, attachment: n.attachment ?? null, version: 1, versions: [], notifications: [],
   };
-  commit({ ...d, seq, orders: [o, ...d.orders] });
+  const ack = orderSettings().notify;
+  const withAck = parentId ? withNotice(o, 'backorder') : ack.ackSources.includes(n.source) ? withNotice(o, 'received') : o;
+  commit({ ...d, seq, orders: [withAck, ...d.orders] });
   if (ctx) validate(o.id, ctx, 'System');
   return { ok: true, message: `${o.code} created.`, id: o.id };
 };
@@ -278,11 +457,11 @@ export const releaseCredit = (id: string, note: string, ctx: OrderCtx, by: strin
   return { ok: true, message: `Credit released — ${o.code} is validated.` };
 };
 
-export interface LineDecision { confirm: number; backorderDate: string | null; substituteSku: string | null }
+export interface LineDecision { confirm: number; backorderDate: string | null; substituteSku: string | null; /** Partner accepted the proposed quantity: no backorder for the rest. */ dropRest?: boolean }
 /** Confirm: quantities are reserved automatically, the partner is notified and (company warehouse) an ERP sales order is created. */
 export const confirmOrder = (id: string, decisions: Record<string, LineDecision>, ctx: OrderCtx, by: string, erpName = 'ERP'): Result => {
   const o = getOrder(id);
-  if (!o || o.status !== 'Validated') return { ok: false, message: 'Only validated orders can be confirmed.' };
+  if (!o || !['Validated', 'Awaiting partner'].includes(o.status)) return { ok: false, message: 'Only validated orders can be confirmed.' };
   const inst = !!ctx.partners.find((p) => p.id === o.partnerId)?.institution;
   const src = shipFromSource(o, ctx);
   const errs: string[] = [];
@@ -293,7 +472,7 @@ export const confirmOrder = (id: string, decisions: Record<string, LineDecision>
     if (dcs.confirm < 0 || dcs.confirm > l.qty) errs.push(`${l.name}: confirm between 0 and ${l.qty}.`);
     const free = dcs.confirm < l.qty ? Math.floor(l.freeQty * (dcs.confirm / l.qty)) : l.freeQty;
     if (src !== 'NONE' && dcs.confirm + free > avail) errs.push(`${l.name}: only ${avail} available to promise${sku !== l.variantSku ? ` for ${sku}` : ''}.`);
-    const back = l.qty - dcs.confirm;
+    const back = dcs.dropRest ? 0 : l.qty - dcs.confirm;
     if (back > 0 && !dcs.backorderDate) errs.push(`${l.name}: give a date for the ${back} on backorder.`);
     return { ...l, variantSku: sku, substituteFor: sku !== l.variantSku ? l.variantSku : l.substituteFor, name: l.name + (sku !== l.variantSku ? ` → substituted ${sku}` : ''), confirmedQty: dcs.confirm, backorderQty: back, backorderDate: back > 0 ? dcs.backorderDate : null, freeQty: free };
   });
@@ -305,7 +484,8 @@ export const confirmOrder = (id: string, decisions: Record<string, LineDecision>
   const so = live ? null : src === 'ERP' ? erpDocNo(erpId, 'SO', db().seq + o.lines.length * 3 + Number(o.code.replace(/\D/g, '').slice(-3))) : null;
   const back = lines.filter((l) => l.backorderQty > 0);
   let next = log({ ...o, lines, status: 'Confirmed', erpSalesOrder: so, blockers: [] }, by, back.length ? `Confirmed; ${back.reduce((a, l) => a + l.backorderQty, 0)} unit(s) on backorder` : 'Confirmed in full', src === 'NONE' ? 'Stock not tracked at this warehouse — nothing reserved' : 'Quantities reserved');
-  next = log(next, 'System', `${o.partnerName} notified (email, WhatsApp, portal)`, `Confirmed quantities${back.length ? ', backorder dates' : ''} and expected dispatch`);
+  next = withNotice(next, 'confirmed');
+  next = log(next, 'System', `${o.partnerName} notified`, `Confirmed quantities${back.length ? ', backorder dates' : ''} and expected dispatch`);
   if (so) next = log(next, 'System', `Sales order ${so} created in ${erpName}`);
   if (live && erpId) next = log({ ...next, erpRef: { connector: erpId, status: 'Sending', at: now() } }, 'System', `Sending the sales order to ${erpName}…`);
   put(next);
@@ -316,16 +496,17 @@ export const confirmOrder = (id: string, decisions: Record<string, LineDecision>
 
 export const rejectOrder = (id: string, reason: string, by: string): Result => {
   const o = getOrder(id);
-  if (!o || !['Received', 'Validated', 'On hold'].includes(o.status)) return { ok: false, message: 'Only open orders can be rejected.' };
+  if (!o || !OPEN.includes(o.status)) return { ok: false, message: 'Only open orders can be rejected.' };
   if (!reason.trim()) return { ok: false, message: 'Give the reason — the partner sees it.' };
-  put(log({ ...o, status: 'Rejected', rejectReason: reason }, by, 'Rejected — partner notified', reason));
+  const a = o.approval && !o.approval.done && o.status === 'Awaiting approval' ? { ...o.approval, decisions: [...o.approval.decisions, { level: o.approval.levels[o.approval.step], by, at: now(), decision: 'Rejected' as const, note: reason }] } : o.approval;
+  put(withNotice(log({ ...o, status: 'Rejected', rejectReason: reason, approval: a }, by, 'Rejected — partner notified', reason), 'rejected', { reason }));
   return { ok: true, message: `${o.code} rejected; ${o.partnerName} notified.` };
 };
 export const cancelOrder = (id: string, reason: string, by: string): Result => {
   const o = getOrder(id);
   if (!o || o.status !== 'Confirmed' || o.shipments.length) return { ok: false, message: 'Only confirmed orders with nothing shipped can be cancelled.' };
   if (!reason.trim()) return { ok: false, message: 'Give a reason.' };
-  put(log({ ...o, status: 'Cancelled' }, by, `Cancelled — reservation released${o.erpSalesOrder ? `; ${o.erpSalesOrder} cancelled in the ERP` : ''}`, reason));
+  put(withNotice(log({ ...o, status: 'Cancelled' }, by, `Cancelled — reservation released${o.erpSalesOrder ? `; ${o.erpSalesOrder} cancelled in the ERP` : ''}`, reason), 'cancelled', { reason }));
   return { ok: true, message: `${o.code} cancelled.` };
 };
 
@@ -417,6 +598,7 @@ export const createShipment = (id: string, qty: Record<string, number>, info: Sh
   const invText = invoiceBy === 'ERP' ? 'ERP invoice' : invoiceBy === 'C&F' ? 'C&F invoice' : invoiceBy === 'Manual' ? 'Invoice' : 'VinFlux invoice';
   let next = log({ ...o, lines, shipments: [...o.shipments, sh], status: allShipped ? 'Shipped' : 'Confirmed' }, by,
     `Shipment ${sh.no} created${allShipped ? '' : ' (part of the order)'} — ${info.carrier} ${info.awb}${sh.tripNo ? ` · trip ${sh.tripNo}` : ''}`, `${invText} ${sh.invoiceNo}, e-invoice IRN${sh.ewayBill ? `, e-way bill ${sh.ewayBill}` : ''}${src === 'NONE' ? ' · stock not tracked at the warehouse' : ''}`);
+  next = withNotice(next, 'shipped', { shipmentNo: sh.no, invoiceNo: sh.invoiceNo, carrier: sh.carrier, awb: sh.awb, eta: sh.eta });
   next = log(next, 'System', `Tracking sent to ${o.partnerName}`, `ETA ${sh.eta}`);
   commit({ ...d, shipSeq: n, orders: d.orders.map((x) => (x.id === o.id ? next : x)) });
   emit('order.dispatched', 'Orders', by, `${o.code}: shipment ${sh.no} (${info.carrier} ${info.awb})`, { orderId: o.id });
@@ -453,7 +635,7 @@ export const deliverShipment = (id: string, shipmentId: string, receivedBy: stri
   }));
   const shipments = o.shipments.map((s) => (s.id === shipmentId ? { ...s, deliveredAt: now(), pod: { receivedBy, method } } : s));
   const done = o.status === 'Shipped' && shipments.every((s) => s.deliveredAt);
-  put(log({ ...o, shipments, status: done ? 'Completed' : o.status }, by, `${sh.no} delivered — ${method} by ${receivedBy}`, done ? 'All shipments delivered — order completed' : undefined));
+  put(withNotice(log({ ...o, shipments, status: done ? 'Completed' : o.status }, by, `${sh.no} delivered — ${method} by ${receivedBy}`, done ? 'All shipments delivered — order completed' : undefined), 'delivered', { shipmentNo: sh.no }));
   emit('order.delivered', 'Orders', by, `${o.code}: ${sh.no} delivered`, { orderId: o.id });
   return { ok: true, message: done ? `${o.code} completed.` : `${sh.no} delivered${dest ? ` — stock added to ${o.partnerName}` : ''}.` };
 };

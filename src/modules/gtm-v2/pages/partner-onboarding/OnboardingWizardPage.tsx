@@ -60,9 +60,14 @@ const OnboardingWizardPage: React.FC = () => {
     } else {
       initialised.current = true;
       if (presetType) setState((s) => ({ ...s, input: { ...s.input, partnerTypeId: presetType } }));
+      // Prefill from a converted CRM lead (CRM-02: no re-typing).
+      if (search.get('fromLead')) {
+        const g = (k: string) => search.get(k) ?? '';
+        setState((s) => ({ ...s, input: { ...s.input, name: g('name'), businessName: g('name'), contactPerson: g('contact'), phone: g('phone'), email: g('email'), gst: g('gst'), address: { ...s.input.address, city: g('city') } } }));
+      }
       partnerService.suggestCode().then((code) => setState((s) => (s.input.code ? s : { ...s, input: { ...s.input, code } })));
     }
-  }, [partnerId, existing, data.loading, data.mappings, data.overrides, presetType]);
+  }, [partnerId, existing, data.loading, data.mappings, data.overrides, presetType, search]);
 
   // Unsaved-change protection for reload / tab close
   useEffect(() => {
