@@ -56,6 +56,8 @@ export interface Shipment {
   carrier: string; awb: string; dispatchedAt: string; eta: string;
   deliveredAt: string | null; pod: { receivedBy: string; method: 'Signature' | 'Photo' | 'OTP' | 'Not required' } | null;
   problem: { shortQty: number; damagedQty: number; claimNos: string[]; at: string } | null;
+  /** Goods receipt auto-posted in the partner's own VinFlux (distributor platform) when it is delivered. */
+  grn?: { no: string; at: string } | null;
   /** Logistics details. */
   tripNo?: string | null; vehicleNo?: string; driver?: string; packages?: number; weightKg?: number; freight?: number;
   /** Who raised the invoice and how stock was handled. */
@@ -256,6 +258,9 @@ export const setOrderCheck = (id: string, f: ((o: Order, ctx: OrderCtx) => Check
   if (i >= 0) extraChecks.splice(i, 1);
   if (f) { (f as unknown as { _id: string })._id = id; extraChecks.push(f); }
 };
+/** Posts the goods receipt in the partner's VinFlux account on delivery (plugged in when Secondary Sales is on). Returns the GRN number, or null. */
+let grnPoster: ((o: Order, sh: Shipment) => string | null) | null = null;
+export const setGrnPoster = (f: ((o: Order, sh: Shipment) => string | null) | null) => { grnPoster = f; };
 export const verdict = (checks: Check[]): 'Blocked' | 'Needs approval' | 'Ready' =>
   checks.some((c) => c.state === 'fail') ? 'Blocked' : checks.some((c) => c.state === 'hold') ? 'Needs approval' : 'Ready';
 
@@ -649,9 +654,12 @@ export const deliverShipment = (id: string, shipmentId: string, receivedBy: stri
       ...(dest ? [{ ...base, type: 'RECEIPT' as const, locType: dest, warehouseId: o.partnerId, qty: a.qty, source: `Received ${sh.no}` }] : []),
     ];
   }));
-  const shipments = o.shipments.map((s) => (s.id === shipmentId ? { ...s, deliveredAt: now(), pod: { receivedBy, method } } : s));
+  const grnNo = grnPoster?.(o, sh) ?? null;
+  const shipments = o.shipments.map((s) => (s.id === shipmentId ? { ...s, deliveredAt: now(), pod: { receivedBy, method }, grn: grnNo ? { no: grnNo, at: now() } : null } : s));
   const done = o.status === 'Shipped' && shipments.every((s) => s.deliveredAt);
-  put(withNotice(log({ ...o, shipments, status: done ? 'Completed' : o.status }, by, `${sh.no} delivered — ${method} by ${receivedBy}`, done ? 'All shipments delivered — order completed' : undefined), 'delivered', { shipmentNo: sh.no }));
+  let rec = log({ ...o, shipments, status: done ? 'Completed' : o.status }, by, `${sh.no} delivered — ${method} by ${receivedBy}`, done ? 'All shipments delivered — order completed' : undefined);
+  if (grnNo) { rec = log(rec, 'VinFlux platform', `Goods receipt ${grnNo} posted in ${o.partnerName}’s VinFlux`, `Invoice ${sh.invoiceNo} — their stock updated, no re-keying`); emit('order.grn', 'Orders', 'VinFlux platform', `${o.code}: GRN ${grnNo} at ${o.partnerName}`, { orderId: o.id, grn: grnNo }); }
+  put(withNotice(rec, 'delivered', { shipmentNo: sh.no }));
   emit('order.delivered', 'Orders', by, `${o.code}: ${sh.no} delivered`, { orderId: o.id });
   return { ok: true, message: done ? `${o.code} completed.` : `${sh.no} delivered${dest ? ` — stock added to ${o.partnerName}` : ''}.` };
 };

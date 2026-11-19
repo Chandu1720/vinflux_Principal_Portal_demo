@@ -116,6 +116,7 @@ export const Sidebar: React.FC = () => {
             </svg>
             <span>Partners</span>
           </button>
+          {nav('/network', 'Network & Invitations', ic('M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6'))}
         </div>}
 
         {/* Medical: surgery cases, sets, implants */}
@@ -137,6 +138,7 @@ export const Sidebar: React.FC = () => {
         {enabled('secondary') && <div className="vf-nav-section">
           <div className="vf-nav-heading">Channel</div>
           {nav('/secondary', 'Secondary Sales & Stock', ic('M4 19h16M7 16V9m5 7V5m5 11v-4'))}
+          {enabled('secondary') && nav('/consent', 'Consent & Data Sharing', ic('M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4'))}
           {enabled('replenishment') && nav('/replenishment', 'Replenishment', ic('M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M18 3v4h-4M6 21v-4h4'))}
           {enabled('partner-lite') && <a className="vf-nav-item" href="/p" target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}><svg className="vf-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" /></svg><span>Partner Lite portal ↗</span></a>}
         </div>}

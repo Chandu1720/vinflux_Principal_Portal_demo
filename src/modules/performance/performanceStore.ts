@@ -18,13 +18,13 @@ import { suggest } from '../replenishment/replenishmentStore';
 export type TargetScope = 'partner' | 'territory' | 'product-group' | 'salesperson';
 export type Basis = 'primary' | 'secondary' | 'both';
 export interface Target { id: string; principalId: string; period: string; scope: TargetScope; refId: string; basis: Basis; value: number; note?: string; createdBy: string }
-export interface Weights { achievement: number; fill: number; stock: number; expiry: number; payment: number; data: number; claims: number }
+export interface Weights { achievement: number; fill: number; stock: number; expiry: number; payment: number; data: number; claims: number; coverage: number; accuracy: number }
 export interface PerfSettings { weights: Weights; sharePartner: boolean; stockBandDays: [number, number] }
 interface Db { targets: Target[]; settings: PerfSettings; seeded: string[] }
 
 export const SCOPE_LABEL: Record<TargetScope, string> = { partner: 'Partner', territory: 'Territory', 'product-group': 'Product group', salesperson: 'Salesperson' };
 export const BASIS_LABEL: Record<Basis, string> = { primary: 'Primary (your sales to them)', secondary: 'Secondary (their sales)', both: 'Both (each must be met)' };
-const DEFAULT: PerfSettings = { weights: { achievement: 30, fill: 10, stock: 10, expiry: 10, payment: 20, data: 10, claims: 10 }, sharePartner: false, stockBandDays: [15, 60] };
+const DEFAULT: PerfSettings = { weights: { achievement: 30, fill: 10, stock: 10, expiry: 5, payment: 15, data: 10, claims: 5, coverage: 10, accuracy: 5 }, sharePartner: false, stockBandDays: [15, 60] };
 
 const KEY = () => workspaceKey('vinflux.performance.v1');
 let cache: { key: string; d: Db } | null = null;
@@ -157,6 +157,17 @@ export const scorecards = (principalId: string, month: string, partners: Partner
     const claimed = cl.filter((x) => x.partnerId === p.id && months6.includes(x.period)).reduce((x, c2) => x + c2.claimedAmount, 0);
     const ratio = sec6 ? Math.round((claimed / sec6) * 1000) / 10 : null;
     metrics.push({ key: 'claims', label: 'Claim ratio', value: ratio === null ? '—' : `${ratio}%`, score: ratio === null ? null : clamp(100 - ratio * 5), hint: claimed ? `${inrS(claimed)} claimed on ${inrS(sec6)} sold` : 'No claims' });
+    // Outlet coverage: customers billed in the last 30 days ÷ customers the partner sold to in the last 6 months.
+    const from30 = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const rs6 = secReports(principalId).filter((r) => r.partnerId === p.id && r.status === 'Accepted' && months6.includes(r.period)).flatMap((r) => r.sales);
+    const known = new Set(rs6.map((x) => `${x.customer}|${x.town}`)); const billed = new Set(rs6.filter((x) => x.date >= from30).map((x) => `${x.customer}|${x.town}`));
+    const covPct = known.size ? Math.round((billed.size / known.size) * 100) : null;
+    metrics.push({ key: 'coverage', label: 'Outlet coverage', value: covPct === null ? '—' : `${billed.size}/${known.size} outlets`, score: covPct, hint: known.size ? 'Customers billed in the last 30 days ÷ customers in 6 months' : 'No secondary sales' });
+    // Claim accuracy: approved ÷ claimed, on decided claims of the last 6 months.
+    const decided = cl.filter((x) => x.partnerId === p.id && months6.includes(x.period) && ['Approved', 'Partly approved', 'Settled', 'Rejected'].includes(x.status));
+    const dClaimed = decided.reduce((x, c2) => x + c2.claimedAmount, 0); const dOk = decided.reduce((x, c2) => x + (c2.status === 'Rejected' ? 0 : c2.approvedAmount ?? 0), 0);
+    const acc = dClaimed ? Math.round((dOk / dClaimed) * 100) : null;
+    metrics.push({ key: 'accuracy', label: 'Claim accuracy', value: acc === null ? '—' : `${acc}%`, score: acc, hint: decided.length ? `${inrS(dOk)} approved of ${inrS(dClaimed)} claimed` : 'No decided claims' });
     const scored = metrics.filter((m) => m.score !== null && w[m.key] > 0);
     const wsum = scored.reduce((x, m) => x + w[m.key], 0);
     const score = wsum ? Math.round(scored.reduce((x, m) => x + (m.score as number) * w[m.key], 0) / wsum) : null;

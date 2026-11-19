@@ -24,6 +24,7 @@ export type PlatformEventType =
   | 'replenishment.answered'
   | 'tender.awarded'
   | 'order.routed'
+  | 'consent.changed' | 'partner.invited' | 'partner.linked' | 'order.grn'
   | 'invoice.issued';
 
 export interface PlatformEvent {

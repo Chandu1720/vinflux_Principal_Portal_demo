@@ -60,6 +60,10 @@ export const Topbar: React.FC<TopbarProps> = ({
     pageTitle = 'Invoicing';
   } else if (location.pathname.startsWith('/replenishment')) {
     pageTitle = 'Replenishment';
+  } else if (location.pathname.startsWith('/consent')) {
+    pageTitle = 'Consent & Data Sharing';
+  } else if (location.pathname.startsWith('/network')) {
+    pageTitle = 'Network & Invitations';
   } else if (location.pathname.startsWith('/assembly')) {
     pageTitle = 'Assembly & Kitting';
   } else if (location.pathname.startsWith('/approvals')) {

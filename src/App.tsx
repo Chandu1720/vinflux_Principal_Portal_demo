@@ -6,7 +6,9 @@ import { AppProvider, useApp } from './context/AppContext.tsx';
 import { PlatformProvider, usePlatform } from './platform/PlatformContext';
 import { ModuleOffPage } from './platform/pages/ModuleOffPage';
 import { setImportsGate } from './modules/procurement/procurementStore';
-import { setInvoiceNumberer, setOrderCheck } from './modules/orders/orderStore';
+import { setGrnPoster, setInvoiceNumberer, setOrderCheck } from './modules/orders/orderStore';
+import { stockNormCheck } from './modules/replenishment/replenishmentStore';
+import { consentAllows, setupOf } from './modules/secondary/secondaryStore';
 import { agreementCheck } from './modules/tenders/tendersStore';
 import { contractCheck } from './modules/pricing/contractUsage';
 import { numberForShipment } from './modules/invoicing/invoiceStore';
@@ -32,6 +34,8 @@ const CollectionsPage = lazy(() => import('./modules/collections/CollectionsPage
 const ProcurementPage = lazy(() => import('./modules/procurement/ProcurementPage'));
 const ImportsPage = lazy(() => import('./modules/imports/ImportsPage'));
 const QcPage = lazy(() => import('./modules/qc/QcPage'));
+const ConsentPage = lazy(() => import('./modules/secondary/ConsentPage'));
+const NetworkPage = lazy(() => import('./modules/network/NetworkPage'));
 const AssemblyPage = lazy(() => import('./modules/assembly/AssemblyPage'));
 const ApprovalsInbox = lazy(() => import('./platform/pages/ApprovalsInbox'));
 const AuditLogPage = lazy(() => import('./platform/pages/AuditLogPage'));
@@ -67,6 +71,9 @@ const AppContent: React.FC = () => {
   // Expired channel agreements warn / block orders (TND-04); VinFlux-issued invoices are numbered per GSTIN and year (OP4).
   setOrderCheck('agreement', enabled('tenders') ? agreementCheck : null);
   setOrderCheck('contract', enabled('price-lists') ? contractCheck : null);
+  // DMS: orders that push a partner above its stock norm wait for approval; deliveries to distributors on the VinFlux platform post their GRN automatically.
+  setOrderCheck('stock-norm', enabled('secondary') ? stockNormCheck : null);
+  setGrnPoster(enabled('secondary') ? (o, sh) => (setupOf(o.partnerId).onPlatform && consentAllows(o.partnerId, 'orders') ? `GRN-${o.partnerId.slice(-4).toUpperCase()}-${sh.no.replace(/\D/g, '').slice(-6)}` : null) : null);
   setInvoiceNumberer(enabled('invoicing') ? (o, ctx) => (optChoice('orders', 'invoicing') === 'vinflux' ? numberForShipment(o, ctx.warehouses ?? [], ctx.partners) : null) : null);
   const guard = (el: React.ReactNode) => (pathAllowed(location.pathname) ? <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>{el}</Suspense> : <ModuleOffPage />);
 
@@ -121,6 +128,8 @@ const AppContent: React.FC = () => {
             <Route path="/qc" element={guard(<QcPage />)} />
             <Route path="/production" element={guard(<ProductionPage />)} />
             <Route path="/assembly" element={guard(<AssemblyPage />)} />
+            <Route path="/consent" element={guard(<ConsentPage />)} />
+            <Route path="/network" element={guard(<NetworkPage />)} />
             <Route path="/approvals" element={<ApprovalsInbox />} />
             <Route path="/audit" element={<AuditLogPage />} />
             <Route path="/data-sources" element={<DataSourcesPage />} />

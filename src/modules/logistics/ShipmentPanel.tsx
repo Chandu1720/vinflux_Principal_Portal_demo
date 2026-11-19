@@ -118,6 +118,7 @@ export const ShipmentCard: React.FC<{ o: Order; sh: Shipment; ctx: OrderCtx; can
         <dt>E-way bill</dt><dd className="g2-mono">{sh.ewayBill ?? (o.erpRef ? 'Not returned by the ERP' : 'Not needed (value ≤ ₹50,000)')}</dd>
         {(sh.packages || sh.weightKg || sh.freight) ? <><dt>Consignment</dt><dd>{sh.packages ?? 1} package(s) · {sh.weightKg ?? '—'} kg{sh.freight ? ` · freight ${inr(sh.freight)}` : ''}{sh.vehicleNo ? ` · vehicle ${sh.vehicleNo}` : ''}{sh.driver ? ` · ${sh.driver}` : ''}</dd></> : null}
         {sh.pod && <><dt>Proof of delivery</dt><dd>{sh.pod.method} — {sh.pod.receivedBy} · {when(sh.deliveredAt!)}</dd></>}
+        {sh.grn && <><dt>Goods receipt at partner</dt><dd>{sh.grn.no} — posted in their VinFlux automatically</dd></>}
         {sh.problem && <><dt>Receipt problem</dt><dd>{sh.problem.shortQty} short, {sh.problem.damagedQty} damaged — claim {sh.problem.claimNos.join(', ')}</dd></>}
       </dl>
       <div className="g2-table-wrap" style={{ marginTop: 8 }}><table className="g2-table">
