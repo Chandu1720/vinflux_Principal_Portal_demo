@@ -51,6 +51,7 @@ const SEED_ROLES: Role[] = [
   { id: 'role-regulatory', name: 'Regulatory Approver', description: 'Approves products and licences; reviews onboarding.', kind: 'Staff', matrix: { products: ['view', 'edit', 'approve', 'configure'], gtm: ['view', 'approve'], pricing: ['view'], inventory: ['view'], data: ['view'] } },
   { id: 'role-product-exec', name: 'Product Executive', description: 'Creates and submits products; cannot approve.', kind: 'Staff', matrix: { products: ['view', 'edit'], gtm: ['view'], pricing: ['view', 'edit'], inventory: ['view'], data: ['view', 'edit'] } },
   { id: 'role-rsm', name: 'Regional Sales Head', description: 'Onboards partners and manages hospital coverage in assigned territories; approves regional requests.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view', 'edit', 'approve'], pricing: ['view', 'edit'], inventory: ['view'] } },
+  { id: 'role-sales-exec', name: 'Sales Executive', description: 'Own leads, opportunities and follow-ups in the Sales CRM; views partners and prices.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view', 'edit'], pricing: ['view'], inventory: ['view'] } },
   { id: 'role-finance', name: 'Finance Controller', description: 'Approves prices, credit and commercial overrides.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view', 'approve', 'configure'], pricing: ['view', 'approve', 'configure'], inventory: ['view'], data: ['view'] } },
   { id: 'role-warehouse', name: 'Warehouse Manager', description: 'Stock and imports for assigned warehouses.', kind: 'Staff', matrix: { products: ['view'], inventory: ['view', 'edit'], data: ['view', 'edit'] } },
   { id: 'role-auditor', name: 'Auditor (read-only)', description: 'Views everything, changes nothing.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view'], pricing: ['view'], inventory: ['view'], data: ['view'], platform: ['view'] } },
@@ -85,13 +86,20 @@ const SESSION_KEY = 'vinflux.session.v1';
 interface Db { roles: Role[]; users: AppUser[]; current: string }
 let cache: Db | null = null;
 const listeners = new Set<() => void>();
+/** Sales executives added with the Sales CRM (merged into older saves). */
+const SALES_USERS: AppUser[] = [
+  { id: 'usr-007', name: 'Kiran Varma', email: 'kiran.varma@bioradmedisys.example', phone: '+91 98480 10007', title: 'Sales Executive — Hyderabad', roleIds: ['role-sales-exec'], status: 'Active', principalIds: ['princ-biorad'], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '2026-11-19', createdBy: 'System', workspace: 'medical-devices' },
+  { id: 'usr-008', name: 'Divya Sharma', email: 'divya.sharma@bioradmedisys.example', phone: '+91 98480 10008', title: 'Sales Executive — Coastal AP', roleIds: ['role-sales-exec'], status: 'Active', principalIds: ['princ-biorad'], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '2026-11-19', createdBy: 'System', workspace: 'medical-devices' },
+];
 const db = (): Db => {
   if (cache) return cache;
   const d = loadJson<Db>(KEY, { roles: SEED_ROLES, users: [...SEED_USERS, ...INDUSTRY_USERS], current: 'usr-001' });
   // Older saves: users had no workspace, and the industry users did not exist yet.
   const users = d.users.map((u) => ({ ...u, workspace: u.workspace ?? 'medical-devices' as IndustryPackId }));
-  INDUSTRY_USERS.forEach((u) => { if (!users.some((x) => x.id === u.id)) users.push(u); });
-  cache = { ...d, users };
+  [...INDUSTRY_USERS, ...SALES_USERS].forEach((u) => { if (!users.some((x) => x.id === u.id)) users.push(u); });
+  const sr = SEED_ROLES.find((r) => r.id === 'role-sales-exec')!;
+  const rolesM = d.roles.some((r) => r.id === sr.id) ? d.roles : [...d.roles, sr];
+  cache = { ...d, roles: rolesM, users };
   return cache;
 };
 const commit = (d: Db) => { cache = d; saveJson(KEY, d); listeners.forEach((l) => l()); };

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { opt, subscribeOptions } from '../../platform/moduleOptions';
 import { useSearchParams } from 'react-router-dom';
 import { CheckCircle2, CircleAlert, CircleX, ClipboardCheck, FileText, PackageCheck, Plus, Truck, Undo2 } from 'lucide-react';
 import { Alert, Badge, Button, Card, Checkbox, ErrorList, Field, FormGrid, Input, KpiCard, Modal, NumberInput, PageHeader, SearchableSelect, SearchInput, Select, Stepper, Tabs, Textarea } from '../../platform/ui';
@@ -218,7 +219,7 @@ const TABS: { id: string; label: string; match: (r: ReturnRequest) => boolean }[
 ];
 
 const ReturnsPage: React.FC = () => {
-  useSubscribe(subscribeReturns, subscribeOrders, subscribeStock);
+  useSubscribe(subscribeReturns, subscribeOrders, subscribeStock, subscribeOptions);
   const ctx = useOrderCtx();
   const imp = useImportContext();
   const { activePrincipal, currentUser } = useApp();
@@ -251,7 +252,7 @@ const ReturnsPage: React.FC = () => {
       </div>
       <Card flush>
         <div className="g2-filterbar">
-          <Tabs active={tab} onChange={setTab} tabs={[...TABS.map((t) => ({ id: t.id, label: t.label, count: all.filter(t.match).length || undefined })), { id: 'policy', label: 'Return policy' }]} />
+          <Tabs active={tab} onChange={setTab} tabs={[...TABS.filter((t) => (t.id !== 'received' || opt('returns', 'qcStep')) && (t.id !== 'pickup' || opt('returns', 'reversePickup'))).map((t) => ({ id: t.id, label: t.label, count: all.filter(t.match).length || undefined })), { id: 'policy', label: 'Return policy' }]} />
           <span className="g2-spacer" />
           {tab !== 'policy' && <SearchInput value={q} onChange={setQ} placeholder="Return, partner, batch, order…" />}
         </div>

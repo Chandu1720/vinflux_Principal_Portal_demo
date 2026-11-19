@@ -19,6 +19,7 @@ import type { LocType } from '../inventory/stockStore';
 import { allShipments, destinationOf, getOrder, minShelfDays, shipFromSource } from '../orders/orderStore';
 import { erpMirror } from '../../platform/integrations/stockSync';
 import type { OrderCtx } from '../orders/orderStore';
+import { opt } from '../../platform/moduleOptions';
 
 export type ReturnReason = 'Damaged in transit' | 'Wrong item sent' | 'Quality complaint' | 'Near expiry' | 'Expired' | 'Excess stock';
 export const REASONS: ReturnReason[] = ['Damaged in transit', 'Wrong item sent', 'Quality complaint', 'Near expiry', 'Expired', 'Excess stock'];
@@ -198,6 +199,11 @@ export const receiveReturn = (id: string, counts: Record<string, number>, ctx: O
   if (tracked && locType === 'COMPANY') erpMirror(r.toWarehouseId, r.lines.map((l) => ({ ...l, qty: counts[l.id] ?? l.qty, status: 'Quarantine' as const })), { warehouses: ctx.warehouses ?? [] });
   const short = r.lines.filter((l) => (counts[l.id] ?? l.qty) < l.qty);
   put(log({ ...r, status: 'Received', receivedAt: now(), lines: r.lines.map((l) => ({ ...l, receivedQty: counts[l.id] ?? l.qty })) }, by, `Received at ${r.toWarehouseName} — held in Quarantine`, short.length ? `Short: ${short.map((l) => `${l.name} ${l.qty - (counts[l.id] ?? l.qty)}`).join(', ')} (claim with the carrier)` : undefined));
+  // Returns check switched off: received goods go straight back to stock.
+  if (!opt('returns', 'qcStep')) {
+    const res = inspectReturn(id, Object.fromEntries(r.lines.map((l) => [l.id, { outcome: 'Restock' as Outcome, note: 'Returns check off — restocked on receipt' }])), ctx, by);
+    return { ...res, message: res.ok ? `${r.no} received and restocked (returns check is off).` : res.message };
+  }
   return { ok: true, message: `${r.no} received — inspect it next.` };
 };
 

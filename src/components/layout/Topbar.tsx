@@ -52,6 +52,12 @@ export const Topbar: React.FC<TopbarProps> = ({
   } else if (location.pathname.startsWith('/users')) {
     pageTitle = 'Users & Roles';
     modeTag = 'Platform';
+  } else if (location.pathname.startsWith('/crm')) {
+    pageTitle = 'Sales CRM';
+    modeTag = 'Sales';
+  } else if (location.pathname.startsWith('/setup')) {
+    pageTitle = 'Setup checklist';
+    modeTag = 'Platform';
   } else if (location.pathname.startsWith('/modules')) {
     pageTitle = 'Modules';
     modeTag = 'Platform';

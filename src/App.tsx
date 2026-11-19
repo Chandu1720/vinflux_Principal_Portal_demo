@@ -16,6 +16,8 @@ import { WarehouseMasterPage } from './pages/WarehouseMasterPage.tsx';
 
 // Platform pages (plug-and-play modules, data import, integrations) and Inventory are lazy-loaded.
 const ModulesPage = lazy(() => import('./platform/pages/ModulesPage'));
+const SetupPage = lazy(() => import('./platform/pages/SetupPage'));
+const CrmPage = lazy(() => import('./modules/crm/CrmPage'));
 const DataImportPage = lazy(() => import('./platform/pages/DataImportPage'));
 const IntegrationHubPage = lazy(() => import('./platform/pages/IntegrationHubPage'));
 const StockOnHandPage = lazy(() => import('./modules/inventory/StockOnHandPage'));
@@ -74,9 +76,11 @@ const AppContent: React.FC = () => {
             <Route path="/inventory" element={guard(<StockOnHandPage />)} />
 
             {/* Platform */}
+            <Route path="/setup" element={guard(<SetupPage />)} />
             <Route path="/modules" element={guard(<ModulesPage />)} />
             <Route path="/users" element={guard(<UsersRolesPage />)} />
             <Route path="/pricing" element={guard(<PricingPage />)} />
+            <Route path="/crm" element={guard(<CrmPage />)} />
             <Route path="/surgical" element={guard(<SurgicalPage />)} />
             <Route path="/orders" element={guard(<OrdersPage />)} />
             <Route path="/logistics" element={guard(<LogisticsPage />)} />

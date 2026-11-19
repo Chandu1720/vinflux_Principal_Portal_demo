@@ -46,7 +46,7 @@ export const fedWarehouses = (id: string, ctx: Pick<ImportContext, 'warehouses'>
 };
 /** Which connector is the master of a warehouse (null = none: stock comes from imports). */
 export const masterOf = (warehouseId: string, ctx: Pick<ImportContext, 'warehouses'>) =>
-  CONNECTORS.find((c) => c.kind === 'ERP' && c.availability === 'sandbox' && connectorSettings(c.id).enabled && fedWarehouses(c.id, ctx).includes(warehouseId))?.id ?? null;
+  CONNECTORS.find((c) => c.kind === 'ERP' && c.availability === 'sandbox' && (!sourceSettings().connectorId || sourceSettings().connectorId === c.id) && connectorSettings(c.id).enabled && fedWarehouses(c.id, ctx).includes(warehouseId))?.id ?? null;
 
 /** Effective stock source of a company warehouse (ERP / VinFlux / orders only). */
 export const sourceOf = (warehouseId: string, ctx: Pick<ImportContext, 'warehouses'>): StockSource => resolveSource(warehouseId, !!masterOf(warehouseId, ctx));

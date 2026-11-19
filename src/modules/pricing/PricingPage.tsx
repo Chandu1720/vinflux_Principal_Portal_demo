@@ -11,12 +11,13 @@ import { PriceListDrawer, STATUS_TONE } from './PriceListDrawer';
 import { PriceCheckTab } from './PriceCheckTab';
 import { SchemesTab } from './SchemesTab';
 import { PriceMatrixTab } from './PriceMatrixTab';
+import { opt, subscribeOptions } from '../../platform/moduleOptions';
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const daysTo = (iso: string) => Math.round((Date.parse(iso) - Date.parse(today())) / 86400000);
 
 const PricingPage: React.FC = () => {
-  useSubscribe(subscribePricing);
+  useSubscribe(subscribePricing, subscribeOptions);
   const { activePrincipal, currentUser, products, showToast } = useApp();
   const channels = useChannels().data ?? [];
   const partners = usePartners().data ?? [];
@@ -95,10 +96,10 @@ const PricingPage: React.FC = () => {
           <Tabs active={tab} onChange={setTab} tabs={[
             { id: 'matrix', label: 'Price matrix & margins', icon: <Layers size={14} /> },
             { id: 'lists', label: 'Price lists', count: all.filter((l) => l.type !== 'CONTRACT').length },
-            { id: 'contracts', label: 'Rate contracts', count: contracts.length },
-            { id: 'approvals', label: 'Approvals', count: pending.length || undefined },
+            ...(opt('price-lists', 'rateContracts') ? [{ id: 'contracts', label: 'Rate contracts', count: contracts.length }] : []),
+            ...(opt('price-lists', 'makerChecker') ? [{ id: 'approvals', label: 'Approvals', count: pending.length || undefined }] : []),
             { id: 'check', label: 'Price check', icon: <BadgeIndianRupee size={14} /> },
-            { id: 'schemes', label: 'Schemes' },
+            ...(opt('price-lists', 'schemes') ? [{ id: 'schemes', label: 'Schemes' }] : []),
           ]} />
           <span className="g2-spacer" />
           {['lists', 'contracts'].includes(tab) && <>

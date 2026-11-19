@@ -120,6 +120,11 @@ export const Sidebar: React.FC = () => {
         </div>}
 
         {/* Commercial */}
+        {enabled('crm') && <div className="vf-nav-section">
+          <div className="vf-nav-heading">Sales</div>
+          {nav('/crm', 'Sales CRM', ic('M3 3v18h18M7 15l4-4 3 3 5-6'))}
+        </div>}
+
         {enabled('price-lists') && <div className="vf-nav-section">
           <div className="vf-nav-heading">Commercial</div>
           {nav('/pricing', 'Price Lists & Contracts', ic('M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01'))}
@@ -167,6 +172,7 @@ export const Sidebar: React.FC = () => {
           {nav('/data-import', 'Data Import', ic('M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3'))}
           {nav('/integrations', 'Integration Hub', ic('M8 7h8M8 12h8M8 17h5M4 4h16v16H4z'))}
           {enabled('users') && nav('/users', 'Users & Roles', ic('M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zm13 10v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75'))}
+          {nav('/setup', 'Setup checklist', ic('M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11'))}
           {nav('/modules', 'Modules', ic('M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'))}
         </div>
       </nav>

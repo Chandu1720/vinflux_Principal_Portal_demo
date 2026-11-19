@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { opt, subscribeOptions } from '../../platform/moduleOptions';
 import { useSearchParams } from 'react-router-dom';
 import { AlertOctagon, ClipboardList, MessageSquareWarning, Plus, ShieldAlert, Siren } from 'lucide-react';
 import { Alert, Badge, Button, Card, ErrorList, Field, FormGrid, Input, KpiCard, Modal, MultiSelect, NumberInput, PageHeader, SearchableSelect, SearchInput, Select, Stepper, Tabs, Textarea } from '../../platform/ui';
@@ -244,12 +245,13 @@ const RecallDrawer: React.FC<{ id: string; ctx: OrderCtx; onClose: () => void }>
 /* ------------------------------------- Page ------------------------------------- */
 
 const RecallPage: React.FC = () => {
-  useSubscribe(subscribeRecall, subscribeOrders, subscribeStock, subscribeReturns);
+  useSubscribe(subscribeRecall, subscribeOrders, subscribeStock, subscribeReturns, subscribeOptions);
   const ctx = useOrderCtx();
   const imp = useImportContext();
   const { activePrincipal, currentUser, warehouses, showToast } = useApp();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'complaints';
+  const complaintsOn = opt('recall', 'complaints');
+  const tab = params.get('tab') ?? (complaintsOn ? 'complaints' : 'recalls');
   const setTab = (t: string) => { params.set('tab', t); setParams(params, { replace: true }); };
   const [q, setQ] = useState('');
   const [openC, setOpenC] = useState<string | null>(null);
@@ -278,7 +280,7 @@ const RecallPage: React.FC = () => {
       </div>
       <Card flush>
         <div className="g2-filterbar">
-          <Tabs active={tab} onChange={setTab} tabs={[{ id: 'complaints', label: 'Complaints', count: cs.filter((c) => c.status !== 'Closed').length || undefined }, { id: 'recalls', label: 'Recalls', count: rs.filter((r) => ['Draft', 'Active'].includes(r.status)).length || undefined }, { id: 'settings', label: 'Settings' }]} />
+          <Tabs active={tab} onChange={setTab} tabs={[...(complaintsOn ? [{ id: 'complaints', label: 'Complaints', count: cs.filter((c) => c.status !== 'Closed').length || undefined }] : []), { id: 'recalls', label: 'Recalls', count: rs.filter((r) => ['Draft', 'Active'].includes(r.status)).length || undefined }, { id: 'settings', label: 'Settings' }]} />
           <span className="g2-spacer" />
           {tab !== 'settings' && <SearchInput value={q} onChange={setQ} placeholder="Number, product, batch, partner…" />}
         </div>
