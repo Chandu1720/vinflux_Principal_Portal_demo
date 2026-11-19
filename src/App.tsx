@@ -17,7 +17,11 @@ import { WarehouseMasterPage } from './pages/WarehouseMasterPage.tsx';
 // Platform pages (plug-and-play modules, data import, integrations) and Inventory are lazy-loaded.
 const ModulesPage = lazy(() => import('./platform/pages/ModulesPage'));
 const SetupPage = lazy(() => import('./platform/pages/SetupPage'));
+const ActionLinkPage = lazy(() => import('./platform/pages/ActionLinkPage'));
+const HomeDashboard = lazy(() => import('./platform/pages/HomeDashboard'));
 const CrmPage = lazy(() => import('./modules/crm/CrmPage'));
+const SecondaryPage = lazy(() => import('./modules/secondary/SecondaryPage'));
+const ClaimsPage = lazy(() => import('./modules/claims/ClaimsPage'));
 const DataImportPage = lazy(() => import('./platform/pages/DataImportPage'));
 const IntegrationHubPage = lazy(() => import('./platform/pages/IntegrationHubPage'));
 const StockOnHandPage = lazy(() => import('./modules/inventory/StockOnHandPage'));
@@ -76,11 +80,14 @@ const AppContent: React.FC = () => {
             <Route path="/inventory" element={guard(<StockOnHandPage />)} />
 
             {/* Platform */}
+            <Route path="/dashboard" element={guard(<HomeDashboard />)} />
             <Route path="/setup" element={guard(<SetupPage />)} />
             <Route path="/modules" element={guard(<ModulesPage />)} />
             <Route path="/users" element={guard(<UsersRolesPage />)} />
             <Route path="/pricing" element={guard(<PricingPage />)} />
             <Route path="/crm" element={guard(<CrmPage />)} />
+            <Route path="/secondary" element={guard(<SecondaryPage />)} />
+            <Route path="/claims" element={guard(<ClaimsPage />)} />
             <Route path="/surgical" element={guard(<SurgicalPage />)} />
             <Route path="/orders" element={guard(<OrdersPage />)} />
             <Route path="/logistics" element={guard(<LogisticsPage />)} />
@@ -124,6 +131,8 @@ const PlatformShell: React.FC = () => {
 /** Nothing but the sign-in page until someone signs in; the account decides the industry workspace. */
 const SignInGate: React.FC = () => {
   const { signedIn } = useApp();
+  // Action links (NOT-04) work without signing in.
+  if (window.location.pathname.startsWith('/a/')) return <BrowserRouter><Suspense fallback={null}><Routes><Route path="/a/:token" element={<ActionLinkPage />} /></Routes></Suspense></BrowserRouter>;
   if (!signedIn) return <LoginPage />;
   return (
     <BrowserRouter>

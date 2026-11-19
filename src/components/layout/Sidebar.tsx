@@ -63,6 +63,9 @@ export const Sidebar: React.FC = () => {
 
       {/* Operational Navigation */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div className="vf-nav-section">
+          {nav('/dashboard', 'Dashboard', ic('M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-18v6h8V3z'))}
+        </div>
         {/* Product Group */}
         <div className="vf-nav-section">
           <div className="vf-nav-heading">Product Operations</div>
@@ -124,9 +127,14 @@ export const Sidebar: React.FC = () => {
           <div className="vf-nav-heading">Sales</div>
           {nav('/crm', 'Sales CRM', ic('M3 3v18h18M7 15l4-4 3 3 5-6'))}
         </div>}
+        {enabled('secondary') && <div className="vf-nav-section">
+          <div className="vf-nav-heading">Channel</div>
+          {nav('/secondary', 'Secondary Sales & Stock', ic('M4 19h16M7 16V9m5 7V5m5 11v-4'))}
+        </div>}
 
         {enabled('price-lists') && <div className="vf-nav-section">
           <div className="vf-nav-heading">Commercial</div>
+          {enabled('claims') && nav('/claims', 'Schemes & Claims', ic('M9 14l6-6M9.5 8.5h.01M14.5 13.5h.01M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z'))}
           {nav('/pricing', 'Price Lists & Contracts', ic('M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01'))}
         </div>}
 

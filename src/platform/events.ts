@@ -16,7 +16,9 @@ export type PlatformEventType =
   | 'implant.recorded' | 'case.closed'
   | 'order.confirmed' | 'order.invoiced' | 'order.dispatched' | 'order.delivered'
   | 'complaint.logged' | 'recall.started'
-  | 'crm.lead.added' | 'crm.lead.converted' | 'crm.opp.won';
+  | 'crm.lead.added' | 'crm.lead.converted' | 'crm.opp.won'
+  | 'secondary.accepted'
+  | 'claim.settled';
 
 export interface PlatformEvent {
   id: string;

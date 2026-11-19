@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Linkify } from '../../platform/Linkify';
 import { useSearchParams } from 'react-router-dom';
 import { CheckCircle2, CircleAlert, CirclePause, CircleX, Clock, Inbox, Mail, MailPlus, Paperclip, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, Truck, Upload, UserCheck } from 'lucide-react';
 import {
@@ -139,7 +140,7 @@ const EmailDrawer: React.FC<{ id: string; ctx: OrderCtx; onClose: () => void; on
         {errs.length > 0 && <ErrorList errors={errs} />}
         {e.issues.length > 0 && <Alert tone={e.status === 'Refused' ? 'info' : 'warn'}>{e.issues.join(' ')}</Alert>}
         <Card title="Email" subtitle={e.attachment ? `Attachment: ${e.attachment}` : undefined}>
-          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>{e.body}</pre>
+          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}><Linkify text={e.body} /></pre>
         </Card>
         <Card title="What VinFlux read">
           <dl className="g2-dl">
@@ -185,7 +186,7 @@ const NoticeCard: React.FC<{ notices: Notice[] }> = ({ notices }) => {
       {open && (
         <Modal open variant="modal" title={open.subject} subtitle={`${open.channel} · ${when(open.at)}`} onClose={() => setOpen(null)} footer={<Button onClick={() => setOpen(null)}>Close</Button>}>
           <dl className="g2-dl" style={{ marginBottom: 12 }}><dt>From</dt><dd>{open.from}</dd><dt>To</dt><dd>{open.to}</dd><dt>Status</dt><dd>{open.status}</dd></dl>
-          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', background: 'var(--g2-surface-2, #f8fafc)', padding: 12, borderRadius: 8 }}>{open.body}</pre>
+          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', background: 'var(--g2-surface-2, #f8fafc)', padding: 12, borderRadius: 8 }}><Linkify text={open.body} /></pre>
         </Modal>
       )}
     </Card>

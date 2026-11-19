@@ -31,9 +31,11 @@ export interface SetupAnswers {
   credit: 'block' | 'warn' | 'off';
   supply: 'buy' | 'erp-production' | 'none';
   crm: 'yes' | 'no';
+  secondary: 'yes' | 'no';
+  claims: 'yes' | 'no';
 }
 
-const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes' };
+const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes', secondary: 'yes', claims: 'yes' };
 const KEY = 'vinflux.setup.v1';
 
 type Q = { id: keyof SetupAnswers; q: string; help?: string; options: { id: string; label: string }[]; show?: (a: SetupAnswers, medical: boolean) => boolean };
@@ -44,8 +46,10 @@ const QUESTIONS: { group: string; items: Q[] }[] = [
   ] },
   { group: 'Selling', items: [
     { id: 'crm', q: 'Will your sales team track leads and deals in VinFlux?', help: 'Sales CRM: leads, opportunities, follow-ups and a team dashboard.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'secondary', q: 'Do you want to see what your partners hold and sell (secondary sales)?', help: 'Partners report stock and sales by Partner Lite, their own software, a file, or your field team — checked against what you delivered.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'orders', q: 'Will partners’ orders come through VinFlux?', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'prices', q: 'Do you keep price lists or hospital rate contracts in VinFlux?', help: 'Orders need prices, so this stays on when orders are on.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'claims', q: 'Do you pay partners schemes after the sale (per unit sold, targets, display)?', help: 'Schemes & Claims: claims checked against verified secondary sales before you pay.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'reservation', q: 'When should stock be set aside for an order?', show: (a) => a.orders === 'yes', options: [{ id: 'submission', label: 'When received' }, { id: 'approval', label: 'When approved' }, { id: 'confirmation', label: 'When confirmed' }] },
     { id: 'credit', q: 'If a partner is over its credit limit…', show: (a) => a.orders === 'yes', options: [{ id: 'block', label: 'Block the order' }, { id: 'warn', label: 'Warn only' }, { id: 'off', label: 'No credit check' }] },
     { id: 'invoicing', q: 'Who issues the tax invoice?', show: (a) => a.orders === 'yes', options: [{ id: 'erp', label: 'Our ERP' }, { id: 'vinflux', label: 'VinFlux' }] },
@@ -65,6 +69,8 @@ const QUESTIONS: { group: string; items: Q[] }[] = [
 export const plan = (a: SetupAnswers, medical: boolean) => {
   const on: ModuleId[] = ['go-to-market', 'users'];
   if (a.crm === 'yes') on.push('crm');
+  if (a.secondary === 'yes') on.push('secondary');
+  if (a.claims === 'yes') on.push('claims');
   if (a.stock !== 'none' || a.orders === 'yes') on.push('inventory');
   if (a.prices === 'yes' || a.orders === 'yes') on.push('price-lists');
   if (a.orders === 'yes') { on.push('orders'); if (a.delivery === 'vinflux') on.push('logistics'); }

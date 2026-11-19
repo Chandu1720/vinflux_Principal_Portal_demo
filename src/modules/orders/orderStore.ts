@@ -20,6 +20,7 @@ import { creditOf, tradeStatusOf } from '../gtm-v2/utils/health';
 import { partnerChannelId } from '../gtm-v2/utils/eligibility';
 import { emit } from '../../platform/events';
 import { optChoice } from '../../platform/moduleOptions';
+import { issueLink } from '../../platform/actionLinks';
 import { loadJson, newId, saveJson } from '../../platform/store';
 import { workspaceKey } from '../../platform/workspace';
 import { balances, post } from '../inventory/stockStore';
@@ -267,6 +268,9 @@ export const inTransit = () => db().orders.flatMap((o) => o.shipments.filter((s)
 
 /** Append the messages an event produces (per the principal's notification settings) to the order. */
 export const withNotice = (o: Order, event: NotifyEvent, vars: Record<string, string | number | undefined> = {}): Order => {
+  // NOT-04: decisions asked for by message carry a one-time, expiring link that works without signing in.
+  if (event === 'approval' && vars.internalTo && !vars.actionLink) vars = { ...vars, actionLink: issueLink('order-approve', o.id, o.principalId, String(vars.internalTo), orderSettings().approval.escalateHours * 2) };
+  if (event === 'partfill' && !vars.actionLink) vars = { ...vars, actionLink: issueLink('order-partfill', o.id, o.principalId, o.partnerName, orderSettings().partFill.replyHours) };
   const n = compose(o, event, vars, orderValue(o, !OPEN.includes(o.status)));
   return n.length ? { ...o, notifications: [...(o.notifications ?? []), ...n] } : o;
 };
