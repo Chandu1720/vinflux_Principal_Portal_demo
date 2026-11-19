@@ -21,6 +21,8 @@ import { crmSummary, subscribeCrm } from '../../modules/crm/crmStore';
 import { cases as surgicalCases, sets as surgicalSets, subscribeSurgical } from '../../modules/surgical/surgicalStore';
 import { returns, subscribeReturns } from '../../modules/returns/returnStore';
 import { complaints, recalls, subscribeRecall } from '../../modules/recall/recallStore';
+import { ageing, allTasks, subscribeCollections } from '../../modules/collections/collectionsStore';
+import { grns as procGrns, pos as procPos, subscribeProcurement, vendorInvoices } from '../../modules/procurement/procurementStore';
 
 const inr = (n: number) => (n >= 10000000 ? `₹${(n / 10000000).toFixed(2)} Cr` : n >= 100000 ? `₹${(n / 100000).toFixed(1)} L` : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -31,7 +33,7 @@ interface Section { module: ModuleId; title: string; path: string; tiles: Tile[]
 interface Attention { text: string; count: number; path: string; tone: BadgeTone }
 
 const HomeDashboard: React.FC = () => {
-  useSubscribe(subscribeOrders, subscribeStock, subscribeSecondary, subscribeClaims, subscribeCrm, subscribeSurgical, subscribeReturns, subscribeRecall);
+  useSubscribe(subscribeOrders, subscribeStock, subscribeSecondary, subscribeClaims, subscribeCrm, subscribeSurgical, subscribeReturns, subscribeRecall, subscribeCollections, subscribeProcurement);
   const { enabled } = usePlatform();
   const navigate = useNavigate();
   const { activePrincipal, products, currentUser } = useApp();
@@ -63,6 +65,32 @@ const HomeDashboard: React.FC = () => {
       weekly = Array.from({ length: 8 }, (_, i) => { const d = new Date(start + i * 7 * 86400000); return { week: d.toISOString().slice(5, 10), value: 0 }; });
       os.filter((o) => !['Rejected', 'Cancelled'].includes(o.status)).forEach((o) => { const i = Math.floor((Date.parse(o.createdAt) - start) / (7 * 86400000)); if (i >= 0 && i < 8) weekly[i].value += orderValue(o); });
       weekly = weekly.map((w) => ({ ...w, value: Math.round(w.value) }));
+    }
+    if (enabled('collections')) {
+      const rows = ageing(pid); const due = allTasks().filter((x) => !x.done && x.due <= t && rows.some((r) => r.partnerId === x.partnerId)).length;
+      const over90 = rows.filter((r) => r.buckets['90+'] > 0).length;
+      sections.push({ module: 'collections', title: 'Collections', path: '/collections', tiles: [
+        { label: 'Outstanding', value: inr(rows.reduce((a, r) => a + r.outstanding, 0)) },
+        { label: 'Overdue', value: inr(rows.reduce((a, r) => a + r.overdue, 0)), tone: 'red' },
+        { label: 'Over 90 days', value: inr(rows.reduce((a, r) => a + r.buckets['90+'], 0)), foot: `${over90} partner(s)`, tone: over90 ? 'red' : undefined },
+        { label: 'Follow-ups due', value: due },
+      ] });
+      need(true, 'Partners with invoices over 90 days', over90, '/collections', 'red');
+      need(true, 'Collection follow-ups due', due, '/collections');
+    }
+    if (enabled('procurement')) {
+      const ps = procPos(pid); const qc = procGrns(pid).filter((g) => g.status === 'In QC').length; const ex = vendorInvoices(pid).filter((i) => i.status === 'Exception').length;
+      const lateP = ps.filter((p) => ['Sent', 'Acknowledged', 'Part received'].includes(p.status) && (p.ack?.promisedDate ?? p.deliveryDate) < t).length;
+      sections.push({ module: 'procurement', title: 'Procurement', path: '/procurement', tiles: [
+        { label: 'Open POs', value: ps.filter((p) => ['Sent', 'Acknowledged', 'Part received'].includes(p.status)).length, foot: `${lateP} late` },
+        { label: 'Awaiting approval', value: ps.filter((p) => p.status === 'Awaiting approval').length },
+        { label: 'Waiting for QC', value: qc, tone: qc ? 'amber' : undefined },
+        { label: 'Invoice exceptions', value: ex, tone: ex ? 'red' : undefined },
+      ] });
+      need(true, 'Purchase orders waiting for approval', ps.filter((p) => p.status === 'Awaiting approval').length, '/procurement');
+      need(true, 'Receipts waiting for QC', qc, '/procurement?tab=grn');
+      need(true, 'Vendor invoices that don’t match', ex, '/procurement?tab=invoices', 'red');
+      need(true, 'Purchase orders past their delivery date', lateP, '/procurement', 'red');
     }
     if (enabled('logistics')) {
       const sh = allShipments().filter((x) => x.order.principalId === pid);

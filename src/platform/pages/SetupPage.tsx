@@ -33,9 +33,11 @@ export interface SetupAnswers {
   crm: 'yes' | 'no';
   secondary: 'yes' | 'no';
   claims: 'yes' | 'no';
+  collections: 'yes' | 'no';
+  procurement: 'vinflux' | 'erp' | 'hybrid' | 'no';
 }
 
-const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes', secondary: 'yes', claims: 'yes' };
+const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes', secondary: 'yes', claims: 'yes', collections: 'yes', procurement: 'vinflux' };
 const KEY = 'vinflux.setup.v1';
 
 type Q = { id: keyof SetupAnswers; q: string; help?: string; options: { id: string; label: string }[]; show?: (a: SetupAnswers, medical: boolean) => boolean };
@@ -43,6 +45,7 @@ const QUESTIONS: { group: string; items: Q[] }[] = [
   { group: 'Stock', items: [
     { id: 'stock', q: 'Where does your stock live?', help: 'ERP: VinFlux reads stock from your ERP (Zoho, SAP…) and never changes it. VinFlux: you keep stock here. Not tracked: orders only, no stock check.', options: [{ id: 'erp', label: 'In our ERP' }, { id: 'vinflux', label: 'In VinFlux' }, { id: 'none', label: 'Not tracked' }] },
     { id: 'supply', q: 'How do you get your products?', help: 'Manufacturing stays in your ERP. VinFlux only needs the finished stock.', options: [{ id: 'buy', label: 'We buy / import finished goods' }, { id: 'erp-production', label: 'We make them (ERP runs production)' }, { id: 'none', label: 'Not relevant' }] },
+    { id: 'procurement', q: 'Where do you raise purchase orders to your vendors?', show: (a) => a.supply !== 'none', help: 'VinFlux: POs, receipt, QC and invoice match here. ERP: shown here as incoming supply. Mixed: POs in the ERP, receipt and QC in VinFlux.', options: [{ id: 'vinflux', label: 'In VinFlux' }, { id: 'erp', label: 'In our ERP' }, { id: 'hybrid', label: 'Mixed' }, { id: 'no', label: 'Not needed' }] },
   ] },
   { group: 'Selling', items: [
     { id: 'crm', q: 'Will your sales team track leads and deals in VinFlux?', help: 'Sales CRM: leads, opportunities, follow-ups and a team dashboard.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
@@ -53,6 +56,7 @@ const QUESTIONS: { group: string; items: Q[] }[] = [
     { id: 'reservation', q: 'When should stock be set aside for an order?', show: (a) => a.orders === 'yes', options: [{ id: 'submission', label: 'When received' }, { id: 'approval', label: 'When approved' }, { id: 'confirmation', label: 'When confirmed' }] },
     { id: 'credit', q: 'If a partner is over its credit limit…', show: (a) => a.orders === 'yes', options: [{ id: 'block', label: 'Block the order' }, { id: 'warn', label: 'Warn only' }, { id: 'off', label: 'No credit check' }] },
     { id: 'invoicing', q: 'Who issues the tax invoice?', show: (a) => a.orders === 'yes', options: [{ id: 'erp', label: 'Our ERP' }, { id: 'vinflux', label: 'VinFlux' }] },
+    { id: 'collections', q: 'Do you want to track payments and chase overdue partners in VinFlux?', help: 'Collections: ageing, payments and cheques, reminders, statements — and the credit check uses it.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'delivery', q: 'How do you want to handle dispatch?', show: (a) => a.orders === 'yes', help: 'Full: shipments, trips, carriers, proof of delivery. Simple: mark shipped and delivered on the order.', options: [{ id: 'vinflux', label: 'Full logistics in VinFlux' }, { id: 'simple', label: 'Simple ship / deliver' }] },
   ] },
   { group: 'Hospitals and surgery', items: [
@@ -71,6 +75,8 @@ export const plan = (a: SetupAnswers, medical: boolean) => {
   if (a.crm === 'yes') on.push('crm');
   if (a.secondary === 'yes') on.push('secondary');
   if (a.claims === 'yes') on.push('claims');
+  if (a.collections === 'yes') on.push('collections');
+  if (a.procurement !== 'no' && a.supply !== 'none') on.push('procurement');
   if (a.stock !== 'none' || a.orders === 'yes') on.push('inventory');
   if (a.prices === 'yes' || a.orders === 'yes') on.push('price-lists');
   if (a.orders === 'yes') { on.push('orders'); if (a.delivery === 'vinflux') on.push('logistics'); }
@@ -80,6 +86,7 @@ export const plan = (a: SetupAnswers, medical: boolean) => {
   if (cases) on.push('surgical');
   const options: Record<string, OptionValue> = {
     'orders.invoicing': a.invoicing,
+    'procurement.owner': a.procurement === 'no' ? 'vinflux' : a.procurement,
     'orders.creditCheck': a.credit,
     'returns.creditNotes': a.invoicing === 'vinflux',
     'surgical.cases': a.cases === 'direct' || a.cases === 'both',

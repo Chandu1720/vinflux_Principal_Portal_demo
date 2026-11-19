@@ -18,7 +18,8 @@ export type PlatformEventType =
   | 'complaint.logged' | 'recall.started'
   | 'crm.lead.added' | 'crm.lead.converted' | 'crm.opp.won'
   | 'secondary.accepted'
-  | 'claim.settled';
+  | 'claim.settled'
+  | 'payment.recorded';
 
 export interface PlatformEvent {
   id: string;

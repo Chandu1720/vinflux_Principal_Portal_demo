@@ -12,6 +12,7 @@ import { useApp } from '../../context/AppContext.tsx';
 import { useOrderCtx } from '../../modules/orders/useOrderCtx';
 import { answerPartFill, approveOrder, getOrder, orderValue, rejectOrder } from '../../modules/orders/orderStore';
 import { decideClaim, getClaim, getScheme } from '../../modules/claims/claimsStore';
+import { acknowledgePO, getPO } from '../../modules/procurement/procurementStore';
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 /** The person behind an approval level (first active user with that role). */
@@ -96,6 +97,28 @@ const ActionLinkPage: React.FC = () => {
             <Button onClick={() => choose('accept-proposed', 'Accept the available quantity only')}>Accept only the available quantity (cancel the rest)</Button>
             <Button onClick={() => choose('wait', 'Wait for the complete order')}>Wait and ship the complete order</Button>
           </div>
+        )}
+        {footer}
+      </Shell>
+    );
+  }
+
+  /* ---------------- Vendor acknowledges a PO ---------------- */
+  if (link.kind === 'po-ack') {
+    const po = getPO(link.refId);
+    if (!po) return <Shell title="Purchase order not found"><Alert tone="warn">The purchase order no longer exists.</Alert></Shell>;
+    return (
+      <Shell title={`Purchase order ${po.no}`}>
+        <div className="g2-small">For <strong>{po.vendorName}</strong> · delivery requested by {po.deliveryDate} · {po.terms}</div>
+        <Card>
+          <div className="g2-stack" style={{ gap: 4 }}>{po.lines.map((l) => <div key={l.id} className="g2-row" style={{ justifyContent: 'space-between' }}><span>{products.find((p) => p.id === l.productId)?.name ?? l.name}</span><span>{l.qty} × {po.currency === 'INR' ? '₹' : `${po.currency} `}{l.price.toLocaleString('en-IN')}</span></div>)}</div>
+        </Card>
+        {po.status !== 'Sent' ? <Alert tone="warn">This order is no longer waiting for acknowledgement (now: {po.status}).</Alert> : (
+          <Card>
+            <Field label="We can deliver by" required><input className="g2-input" type="date" defaultValue={po.deliveryDate} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setNote(`${e.target.value}|${note.split('|')[1] ?? ''}`)} /></Field>
+            <Field label="Note (optional)"><Textarea rows={2} onChange={(e) => setNote(`${note.split('|')[0] || po.deliveryDate}|${e.target.value}`)} /></Field>
+            <div style={{ marginTop: 12 }}><Button variant="primary" icon={<CheckCircle2 size={15} />} onClick={() => { const [d, n] = (note || po.deliveryDate).split('|'); finish(acknowledgePO(po.id, d || po.deliveryDate, n ?? '', `${po.vendorName} (via email link)`, 'Vendor link'), po.vendorName, `Acknowledged for ${d || po.deliveryDate}`); }}>Acknowledge order</Button></div>
+          </Card>
         )}
         {footer}
       </Shell>

@@ -22,6 +22,8 @@ const HomeDashboard = lazy(() => import('./platform/pages/HomeDashboard'));
 const CrmPage = lazy(() => import('./modules/crm/CrmPage'));
 const SecondaryPage = lazy(() => import('./modules/secondary/SecondaryPage'));
 const ClaimsPage = lazy(() => import('./modules/claims/ClaimsPage'));
+const CollectionsPage = lazy(() => import('./modules/collections/CollectionsPage'));
+const ProcurementPage = lazy(() => import('./modules/procurement/ProcurementPage'));
 const DataImportPage = lazy(() => import('./platform/pages/DataImportPage'));
 const IntegrationHubPage = lazy(() => import('./platform/pages/IntegrationHubPage'));
 const StockOnHandPage = lazy(() => import('./modules/inventory/StockOnHandPage'));
@@ -88,6 +90,8 @@ const AppContent: React.FC = () => {
             <Route path="/crm" element={guard(<CrmPage />)} />
             <Route path="/secondary" element={guard(<SecondaryPage />)} />
             <Route path="/claims" element={guard(<ClaimsPage />)} />
+            <Route path="/collections" element={guard(<CollectionsPage />)} />
+            <Route path="/procurement" element={guard(<ProcurementPage />)} />
             <Route path="/surgical" element={guard(<SurgicalPage />)} />
             <Route path="/orders" element={guard(<OrdersPage />)} />
             <Route path="/logistics" element={guard(<LogisticsPage />)} />

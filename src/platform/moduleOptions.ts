@@ -21,6 +21,14 @@ export interface OptionDef {
 }
 
 export const MODULE_OPTIONS: Partial<Record<ModuleId, OptionDef[]>> = {
+  procurement: [
+    { key: 'owner', label: 'Who runs purchasing', help: 'VinFlux: POs, receipts and QC here. ERP: POs and receipts in your ERP; VinFlux shows them. Mixed: POs in the ERP, receipt and QC in VinFlux.', type: 'choice', default: 'vinflux', choices: [{ value: 'vinflux', label: 'VinFlux' }, { value: 'erp', label: 'Our ERP' }, { value: 'hybrid', label: 'Mixed (POs in ERP, receipt + QC here)' }] },
+    { key: 'approvalLimit', label: 'PO approval above', type: 'choice', default: '500000', choices: [{ value: '100000', label: '₹1 lakh' }, { value: '500000', label: '₹5 lakh' }, { value: '2500000', label: '₹25 lakh' }, { value: '999999999', label: 'Never' }] },
+    { key: 'inspection', label: 'Inspect receipts before stock is sellable', help: 'Receipts go to Quarantine until QC accepts them (needs Inventory → quarantine).', type: 'bool', default: true },
+    { key: 'inspectorSeparate', label: 'QC by someone other than the receiver', type: 'bool', default: false, requires: 'inspection' },
+    { key: 'overTolerance', label: 'Accept over-receipt up to', type: 'choice', default: '0', choices: [{ value: '0', label: '0% (always ask)' }, { value: '2', label: '2%' }, { value: '5', label: '5%' }] },
+    { key: 'priceTolerance', label: 'Invoice price tolerance', type: 'choice', default: '1', choices: [{ value: '0', label: '0%' }, { value: '1', label: '1%' }, { value: '2', label: '2%' }] },
+  ],
   crm: [
     { key: 'opportunities', label: 'Opportunities and pipeline', help: 'Off: leads only (add, follow up, convert).', type: 'bool', default: true },
     { key: 'teamDashboard', label: 'Team dashboard for managers', type: 'bool', default: true },
