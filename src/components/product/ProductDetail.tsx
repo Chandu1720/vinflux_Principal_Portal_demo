@@ -302,6 +302,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 <dl>
                   <div><dt>Principal / Manufacturer</dt><dd>{principalName(product.principalId)}</dd></div>
                   <div><dt>Brand</dt><dd>{product.brand || 'GENIUS EVOCON'}</dd></div>
+                  <div><dt>Supply model</dt><dd>{product.supplyModel ?? 'Bought finished'}</dd></div>
                   <div><dt>Manufacturer Part No.</dt><dd><code>MPN-{product.code.slice(-6)}</code></dd></div>
                   <div><dt>Supplier / Vendor</dt><dd>Biorad Global Logistics</dd></div>
                   <div><dt>Country of Origin</dt><dd>India (Domestic Manufacturing)</dd></div>

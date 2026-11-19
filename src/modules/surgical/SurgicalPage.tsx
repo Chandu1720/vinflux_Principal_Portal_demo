@@ -13,6 +13,7 @@ import type { Partner } from '../gtm-v2/types';
 import { gstOf, subscribePricing } from '../pricing/pricingStore';
 import { quoteFor } from '../pricing/quoteFor';
 import { opt, subscribeOptions } from '../../platform/moduleOptions';
+import { caseUsageAllowed, subscribeSecondary } from '../secondary/secondaryStore';
 import {
   COMPANY, hospitalRoles, partyLabel, rolesOf, sameParty, saveHospitalRoles,
   bookCase, cancelCase, cases as listCases, closeCase, dispatchKit, getCase, getSet, markExplanted, recordUsage, refillImplants, register as listRegister,
@@ -373,7 +374,7 @@ const ImplantCard: React.FC<{ r: ImplantRecord; manufacturer: string; onClose: (
 const ROLE_FILTERS = [{ id: 'all', label: 'All' }, { id: 'owner', label: 'We run' }, { id: 'goods', label: 'We supply' }, { id: 'ot', label: 'We support in OT' }, { id: 'billing', label: 'We bill' }, { id: 'partner', label: 'Partner-run' }];
 
 const SurgicalPage: React.FC = () => {
-  useSubscribe(subscribeSurgical, subscribeOptions);
+  useSubscribe(subscribeSurgical, subscribeOptions, subscribeSecondary);
   const runCases = opt('surgical', 'cases');
   const partnerUsage = opt('surgical', 'partnerUsage');
   const showSets = opt('surgical', 'loanerSets') || opt('surgical', 'consignmentSets');
@@ -396,7 +397,8 @@ const SurgicalPage: React.FC = () => {
   const weAre = (c: SurgeryCase) => { const r = rolesOf(c); return { owner: c.servedBy === 'COMPANY', goods: r.goods.kind === 'COMPANY', ot: r.ot?.kind === 'COMPANY', billing: r.billing.kind === 'COMPANY' }; };
   const involved = (c: SurgeryCase) => Object.values(weAre(c)).some(Boolean);
   // Cases off: only partner-run cases are shown, read-only (if usage sharing is on). Usage sharing off: partner-run cases we have no role in are hidden.
-  const visibleCases = listCases().filter((c) => c.principalId === activePrincipal.id).filter((c) => (runCases ? partnerUsage || involved(c) : partnerUsage && c.servedBy === 'PARTNER'));
+  const shared = (c: SurgeryCase) => partnerUsage && caseUsageAllowed(c.servedBy === 'PARTNER' ? c.partnerId : null);
+  const visibleCases = listCases().filter((c) => c.principalId === activePrincipal.id).filter((c) => (runCases ? involved(c) || shared(c) : c.servedBy === 'PARTNER' && shared(c)));
   const allCases = visibleCases.filter((c) => { const w = weAre(c); return rf === 'all' ? true : rf === 'partner' ? !w.owner : !!w[rf as keyof typeof w]; });
   const canBook = canEdit && runCases;
   const allSets = listSets();

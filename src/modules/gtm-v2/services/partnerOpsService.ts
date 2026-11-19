@@ -21,6 +21,15 @@ export interface InviteInput { name: string; email: string; phone: string; role:
 
 export const partnerOpsService = {
   /* ------------------------------ Credit ------------------------------ */
+  /** Collections writes the partner's live credit position (outstanding, overdue); the hold is untouched. */
+  syncCredit: (id: string, outstanding: number, overdue: number, actor: string) => mockCall(() => mutateDb(['partners'], (d) => {
+    const p = get(d, id);
+    const cur = p.credit;
+    if (cur && cur.outstanding === outstanding && cur.overdue === overdue && cur.asOf === today()) return p;
+    p.credit = { hold: null, ...cur, outstanding, overdue, asOf: today() };
+    touch(p, actor);
+    return p;
+  })),
   placeHold: (id: string, reason: string, actor: string) => mockCall(() => mutateDb(['partners'], (d) => {
     const p = get(d, id);
     if (!reason.trim()) throw new ServiceError('Enter a reason for the hold.');

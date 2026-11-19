@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Linkify } from '../../platform/Linkify';
 import { useSearchParams } from 'react-router-dom';
 import { CheckCircle2, CircleAlert, CirclePause, CircleX, Clock, Inbox, Mail, MailPlus, Paperclip, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, Truck, Upload, UserCheck } from 'lucide-react';
 import {
@@ -29,6 +30,7 @@ import { usePlatform } from '../../platform/PlatformContext';
 import { ShipForm, ShipmentCard } from '../logistics/ShipmentPanel';
 import { useNavigate } from 'react-router-dom';
 import { ensureDemo } from './seedDemo';
+import { routeOrder, routedOrders, subscribeRouting, supplierOf } from './routing';
 import { MAILBOX, discardEmail, emails as listEmails, fixEmail, getEmail, parseEmail, partnerForSender, priceLine, processEmail, processInbox, shipFromFor, simulateEmail, subscribeMailbox } from './intake';
 import type { EmailStatus } from './intake';
 
@@ -69,9 +71,18 @@ const NewOrderDrawer: React.FC<{ ctx: OrderCtx; onClose: () => void; onOpen: (id
     if (!r.ok) { setErrs(r.errors ?? [r.message]); return; }
     showToast(r.message, 'success'); onClose(); if (r.id) onOpen(r.id);
   };
+  // GTM-04: a partner that buys through another partner — route the order to its supplier instead of refusing it.
+  const sup = p && route && !route.ok ? supplierOf(p.id, ctx) : null;
+  const routeIt = () => {
+    if (!p) return;
+    const r = routeOrder({ principalId: activePrincipal.id, from: p, source: f.source, poNumber: f.poNumber, by: currentUser.name,
+      lines: lines.filter((l) => l.productId).map((l) => { const pr = ctx.products.find((x) => x.id === l.productId); return { productId: l.productId, name: pr?.name ?? l.productId, qty: l.qty, unitValue: (pr?.pricingReference?.mrp ?? 0) * 0.7 }; }) }, ctx);
+    if (!r.ok) { setErrs([r.message]); return; }
+    showToast(r.message, 'success'); onClose();
+  };
   return (
     <Modal open size="lg" title="Enter an order" subtitle="For orders taken by phone or on a field visit. Emails arrive in the Orders mailbox; portal and EDI orders arrive on their own." onClose={onClose}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} disabled={!!route && !route.ok}>Create order</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button>{sup ? <Button variant="primary" onClick={routeIt}>Route to {sup.name}</Button> : <Button variant="primary" onClick={save} disabled={!!route && !route.ok}>Create order</Button>}</>}>
       <div className="g2-stack">
         {errs.length > 0 && <ErrorList errors={errs} />}
         <FormGrid>
@@ -139,7 +150,7 @@ const EmailDrawer: React.FC<{ id: string; ctx: OrderCtx; onClose: () => void; on
         {errs.length > 0 && <ErrorList errors={errs} />}
         {e.issues.length > 0 && <Alert tone={e.status === 'Refused' ? 'info' : 'warn'}>{e.issues.join(' ')}</Alert>}
         <Card title="Email" subtitle={e.attachment ? `Attachment: ${e.attachment}` : undefined}>
-          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>{e.body}</pre>
+          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}><Linkify text={e.body} /></pre>
         </Card>
         <Card title="What VinFlux read">
           <dl className="g2-dl">
@@ -185,7 +196,7 @@ const NoticeCard: React.FC<{ notices: Notice[] }> = ({ notices }) => {
       {open && (
         <Modal open variant="modal" title={open.subject} subtitle={`${open.channel} · ${when(open.at)}`} onClose={() => setOpen(null)} footer={<Button onClick={() => setOpen(null)}>Close</Button>}>
           <dl className="g2-dl" style={{ marginBottom: 12 }}><dt>From</dt><dd>{open.from}</dd><dt>To</dt><dd>{open.to}</dd><dt>Status</dt><dd>{open.status}</dd></dl>
-          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', background: 'var(--g2-surface-2, #f8fafc)', padding: 12, borderRadius: 8 }}>{open.body}</pre>
+          <pre className="g2-small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', background: 'var(--g2-surface-2, #f8fafc)', padding: 12, borderRadius: 8 }}><Linkify text={open.body} /></pre>
         </Modal>
       )}
     </Card>
@@ -433,7 +444,7 @@ const TABS: { id: string; label: string; match: (o: Order) => boolean }[] = [
 ];
 
 const OrdersPage: React.FC = () => {
-  useSubscribe(subscribeOrders, subscribeStock, subscribePricing, subscribeMailbox, subscribeOrderSettings);
+  useSubscribe(subscribeOrders, subscribeStock, subscribePricing, subscribeMailbox, subscribeOrderSettings, subscribeRouting);
   const ctx = useOrderCtx();
   const imp = useImportContext();
   const { activePrincipal, currentUser, warehouses, showToast } = useApp();
@@ -477,11 +488,27 @@ const OrdersPage: React.FC = () => {
       </div>
       <Card flush>
         <div className="g2-filterbar">
-          <Tabs active={tab} onChange={setTab} tabs={[{ id: 'inbox', label: 'Mailbox', count: fresh.length || undefined }, ...TABS.map((t) => ({ id: t.id, label: t.label, count: all.filter(t.match).length || undefined })), { id: 'settings', label: 'Settings' }]} />
+          <Tabs active={tab} onChange={setTab} tabs={[{ id: 'inbox', label: 'Mailbox', count: fresh.length || undefined }, ...TABS.map((t) => ({ id: t.id, label: t.label, count: all.filter(t.match).length || undefined })), { id: 'routed', label: 'Routed to partners', count: routedOrders(activePrincipal.id).length || undefined }, { id: 'settings', label: 'Settings' }]} />
           <span className="g2-spacer" />
           {tab !== 'settings' && <SearchInput value={q} onChange={setQ} placeholder={tab === 'inbox' ? 'Sender, subject…' : 'Order, partner, PO…'} />}
         </div>
-        {tab === 'settings' ? <OrderSettingsPanel ctx={ctx} canConfigure={canConfigure} /> : tab === 'inbox' ? (
+        {tab === 'settings' ? <OrderSettingsPanel ctx={ctx} canConfigure={canConfigure} /> : tab === 'routed' ? (
+          <div className="g2-table-wrap"><table className="g2-table">
+            <thead><tr><th>Routed</th><th>From</th><th>Routed to</th><th>Products</th><th style={{ textAlign: 'right' }}>Est. value</th><th>Outcome</th></tr></thead>
+            <tbody>
+              {routedOrders(activePrincipal.id).length === 0 && <tr><td colSpan={6} className="g2-muted">Orders from partners who buy through another partner (dealers, sub-distributors) are routed to their supplier and recorded here as downstream demand.</td></tr>}
+              {routedOrders(activePrincipal.id).filter((r) => !q || `${r.no} ${r.fromName} ${r.supplierName} ${r.poNumber}`.toLowerCase().includes(q.toLowerCase())).map((r) => (
+                <tr key={r.id}>
+                  <td className="g2-mono">{r.no}<div className="g2-cell-sub">{r.at.slice(0, 10)} · {r.source}{r.poNumber ? ` · PO ${r.poNumber}` : ''}</div></td>
+                  <td>{r.fromName}</td><td>{r.supplierName}</td>
+                  <td className="g2-small">{r.lines.map((l) => `${l.name.slice(0, 32)} × ${l.qty}`).join('; ')}</td>
+                  <td style={{ textAlign: 'right' }}>₹{r.value.toLocaleString('en-IN')}</td>
+                  <td><Badge tone={r.status === 'In supplier’s inbox' ? 'green' : 'amber'}>{r.status}</Badge><div className="g2-cell-sub" style={{ maxWidth: 320 }}>{r.message}</div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        ) : tab === 'inbox' ? (
           <>
             <div className="g2-row" style={{ padding: '10px 16px', gap: 8, borderBottom: '1px solid var(--g2-border, #e5e7eb)' }}>
               <span className="g2-small g2-muted">Emails to <span className="g2-mono">{MAILBOX}</span> are read automatically: sender → partner, codes → products, then an order is created and validated.</span>

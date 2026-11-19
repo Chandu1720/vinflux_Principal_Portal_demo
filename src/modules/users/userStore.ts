@@ -52,6 +52,8 @@ const SEED_ROLES: Role[] = [
   { id: 'role-product-exec', name: 'Product Executive', description: 'Creates and submits products; cannot approve.', kind: 'Staff', matrix: { products: ['view', 'edit'], gtm: ['view'], pricing: ['view', 'edit'], inventory: ['view'], data: ['view', 'edit'] } },
   { id: 'role-rsm', name: 'Regional Sales Head', description: 'Onboards partners and manages hospital coverage in assigned territories; approves regional requests.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view', 'edit', 'approve'], pricing: ['view', 'edit'], inventory: ['view'] } },
   { id: 'role-sales-exec', name: 'Sales Executive', description: 'Own leads, opportunities and follow-ups in the Sales CRM; views partners and prices.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view', 'edit'], pricing: ['view'], inventory: ['view'] } },
+  { id: 'role-qc-inspector', name: 'QC Inspector', description: 'Inspects goods in Quarantine (receipts, imports, returns) and records results; cannot release.', kind: 'Staff', matrix: { products: ['view'], inventory: ['view', 'edit'] } },
+  { id: 'role-qc-approver', name: 'QC Approver', description: 'Releases inspected goods from Quarantine; never the person who received or inspected them.', kind: 'Staff', matrix: { products: ['view'], inventory: ['view', 'edit', 'approve'] } },
   { id: 'role-finance', name: 'Finance Controller', description: 'Approves prices, credit and commercial overrides.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view', 'approve', 'configure'], pricing: ['view', 'approve', 'configure'], inventory: ['view'], data: ['view'] } },
   { id: 'role-warehouse', name: 'Warehouse Manager', description: 'Stock and imports for assigned warehouses.', kind: 'Staff', matrix: { products: ['view'], inventory: ['view', 'edit'], data: ['view', 'edit'] } },
   { id: 'role-auditor', name: 'Auditor (read-only)', description: 'Views everything, changes nothing.', kind: 'Staff', matrix: { products: ['view'], gtm: ['view'], pricing: ['view'], inventory: ['view'], data: ['view'], platform: ['view'] } },
@@ -89,6 +91,8 @@ const listeners = new Set<() => void>();
 /** Sales executives added with the Sales CRM (merged into older saves). */
 const SALES_USERS: AppUser[] = [
   { id: 'usr-007', name: 'Kiran Varma', email: 'kiran.varma@bioradmedisys.example', phone: '+91 98480 10007', title: 'Sales Executive — Hyderabad', roleIds: ['role-sales-exec'], status: 'Active', principalIds: ['princ-biorad'], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '2026-11-19', createdBy: 'System', workspace: 'medical-devices' },
+  { id: 'usr-009', name: 'Lakshmi Prasad', email: 'lakshmi.prasad@bioradmedisys.example', phone: '+91 98480 10009', title: 'QC Inspector — Medchal', roleIds: ['role-qc-inspector'], status: 'Active', principalIds: ['princ-biorad'], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '2026-11-19', createdBy: 'System', workspace: 'medical-devices' },
+  { id: 'usr-010', name: 'Dr. Kavitha Rao', email: 'kavitha.rao@bioradmedisys.example', phone: '+91 98480 10010', title: 'QA Head (QC Approver)', roleIds: ['role-qc-approver'], status: 'Active', principalIds: [], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '2026-11-19', createdBy: 'System', workspace: 'medical-devices' },
   { id: 'usr-008', name: 'Divya Sharma', email: 'divya.sharma@bioradmedisys.example', phone: '+91 98480 10008', title: 'Sales Executive — Coastal AP', roleIds: ['role-sales-exec'], status: 'Active', principalIds: ['princ-biorad'], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '2026-11-19', createdBy: 'System', workspace: 'medical-devices' },
 ];
 const db = (): Db => {
@@ -97,8 +101,8 @@ const db = (): Db => {
   // Older saves: users had no workspace, and the industry users did not exist yet.
   const users = d.users.map((u) => ({ ...u, workspace: u.workspace ?? 'medical-devices' as IndustryPackId }));
   [...INDUSTRY_USERS, ...SALES_USERS].forEach((u) => { if (!users.some((x) => x.id === u.id)) users.push(u); });
-  const sr = SEED_ROLES.find((r) => r.id === 'role-sales-exec')!;
-  const rolesM = d.roles.some((r) => r.id === sr.id) ? d.roles : [...d.roles, sr];
+  const newRoles = SEED_ROLES.filter((r) => ['role-sales-exec', 'role-qc-inspector', 'role-qc-approver'].includes(r.id) && !d.roles.some((x) => x.id === r.id));
+  const rolesM = [...d.roles, ...newRoles];
   cache = { ...d, roles: rolesM, users };
   return cache;
 };
@@ -203,3 +207,6 @@ export const deleteRole = (id: string): string | null => {
 };
 
 export const blankUser = (workspace: IndustryPackId): AppUser => ({ id: '', name: '', email: '', phone: '', title: '', roleIds: [], status: 'Active', principalIds: [], territoryIds: [], warehouseIds: [], lastActiveAt: null, createdAt: '', createdBy: '', workspace });
+
+/** Roles that only make sense when a module is on — hidden from new assignments while it is off. */
+export const ROLE_MODULE: Record<string, string> = { 'role-sales-exec': 'crm', 'role-qc-inspector': 'qc', 'role-qc-approver': 'qc', 'role-warehouse': 'inventory' };

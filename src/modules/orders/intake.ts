@@ -17,6 +17,7 @@ import { loadJson, newId, saveJson } from '../../platform/store';
 import { workspaceKey } from '../../platform/workspace';
 import { balances } from '../inventory/stockStore';
 import { createOrder, getOrder, routeOf } from './orderStore';
+import { routeOrder } from './routing';
 import type { Order, OrderCtx } from './orderStore';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -125,8 +126,12 @@ export const processEmail = (id: string, ctx: OrderCtx, principalId: string, war
     const sup = ctx.mappings.filter((m) => m.partnerId === p.id && m.status === 'Active').flatMap((m) => m.suppliers ?? []).find((s) => s.kind === 'PARTNER');
     const supName = sup ? ctx.partners.find((x) => x.id === sup.partnerId)?.name : null;
     const reply = `Dear ${p.contactPerson || p.name},\n\nThank you for your order. ${p.name} is supplied by ${supName ?? 'your appointed distributor'}, so we can't take this order directly. Please place it with ${supName ?? 'them'} — they hold stock for your area.\n\nRegards,\nOrder desk`;
-    putEmail({ ...e, status: 'Refused', partnerId: p.id, issues: [route.text], reply });
-    return { ok: true, message: `Not a direct partner — auto-reply sent to ${e.from}${supName ? ` asking them to order from ${supName}` : ''}.` };
+    // GTM-04: routed, not dropped — the supplier gets it (or the dealer is told whom to order from) and it counts as demand.
+    const parsedR = parseEmail(e); const ownedR = ctx.products.filter((x) => x.principalId === principalId);
+    const rLines = parsedR.lines.map((l) => { const f = findProduct(l.code, ownedR); return f ? { productId: f.product.id, name: f.product.name, qty: l.qty, unitValue: (f.product.pricingReference?.mrp ?? 0) * 0.7 } : null; }).filter(Boolean) as { productId: string; name: string; qty: number; unitValue: number }[];
+    const rr = rLines.length ? routeOrder({ principalId, from: p, lines: rLines, source: 'Email', poNumber: parsedR.po ?? '', by }, ctx) : null;
+    putEmail({ ...e, status: 'Refused', partnerId: p.id, issues: [route.text, ...(rr?.ok ? [rr.message] : [])], reply });
+    return { ok: true, message: rr?.ok ? rr.message : `Not a direct partner — auto-reply sent to ${e.from}${supName ? ` asking them to order from ${supName}` : ''}.` };
   }
   const parsed = parseEmail(e);
   const aliases = box().aliases;

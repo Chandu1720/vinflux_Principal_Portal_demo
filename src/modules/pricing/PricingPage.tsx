@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import { contractPct, ensureContractQtyDemo } from './contractUsage';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layers, BadgeIndianRupee, CalendarClock, ClipboardCheck, FileSignature, Plus, Tag } from 'lucide-react';
-import { Alert, Badge, Button, Card, KpiCard, PageHeader, SearchInput, Select, Tabs } from '../../platform/ui';
+import { Alert, Badge, Button, Card, KpiCard, PageHeader, Progress, SearchInput, Select, Tabs } from '../../platform/ui';
 import { useSubscribe } from '../../platform/useStore';
 import { useApp } from '../../context/AppContext.tsx';
 import { useChannels, usePartners, useTerritories } from '../gtm-v2/hooks/useGtmData';
 import { TYPE_LABEL, approveBatch, blankList, effectiveOn, priceLists, subscribePricing, tierName, today } from './pricingStore';
+import { subscribeOrders } from '../orders/orderStore';
 import type { ListType, PriceList } from './pricingStore';
 import { PriceListDrawer, STATUS_TONE } from './PriceListDrawer';
 import { PriceCheckTab } from './PriceCheckTab';
@@ -17,8 +19,9 @@ const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const daysTo = (iso: string) => Math.round((Date.parse(iso) - Date.parse(today())) / 86400000);
 
 const PricingPage: React.FC = () => {
-  useSubscribe(subscribePricing, subscribeOptions);
+  useSubscribe(subscribePricing, subscribeOptions, subscribeOrders);
   const { activePrincipal, currentUser, products, showToast } = useApp();
+  useEffect(() => { ensureContractQtyDemo(activePrincipal.id); }, [activePrincipal.id]);
   const channels = useChannels().data ?? [];
   const partners = usePartners().data ?? [];
   const territories = useTerritories().data ?? [];
@@ -56,7 +59,7 @@ const PricingPage: React.FC = () => {
 
   const table = (
     <div className="g2-table-wrap"><table className="g2-table">
-      <thead><tr><th>Name</th><th>Applies to</th><th>Validity</th><th style={{ textAlign: 'right' }}>Products</th><th>Version</th><th>Status</th></tr></thead>
+      <thead><tr><th>Name</th><th>Applies to</th><th>Validity</th><th style={{ textAlign: 'right' }}>Products</th>{tab === 'contracts' && <th style={{ width: 150 }}>Contract used</th>}<th>Version</th><th>Status</th></tr></thead>
       <tbody>
         {rows.length === 0 && <tr><td colSpan={6} className="g2-muted">{tab === 'approvals' ? 'Nothing waiting for approval.' : 'No price lists yet.'}</td></tr>}
         {rows.map((l) => {
@@ -67,6 +70,7 @@ const PricingPage: React.FC = () => {
               <td className="g2-small" style={{ maxWidth: 260 }}>{appliesTo(l)}</td>
               <td className="g2-small">{l.validFrom} → {l.validTo ?? 'until replaced'}{l.type === 'CONTRACT' && l.validTo && l.status === 'Active' && daysTo(l.validTo) <= 90 && daysTo(l.validTo) >= 0 && <> <Badge tone="amber">Ends in {daysTo(l.validTo)}d</Badge></>}</td>
               <td style={{ textAlign: 'right' }}>{l.lines.length}</td>
+              {tab === 'contracts' && <td>{(() => { const pct = contractPct(l); return pct === null ? <span className="g2-muted g2-small">no quantity set</span> : <div className="g2-row" style={{ gap: 6 }}><div style={{ flex: 1 }}><Progress value={Math.min(100, pct)} color={pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#059669'} /></div><strong className="g2-small">{pct}%</strong></div>; })()}</td>}
               <td>v{l.version}</td>
               <td><Badge tone={s.tone} dot>{s.label}</Badge>{l.status === 'Pending' && <div className="g2-cell-sub">by {l.submittedBy}</div>}</td>
             </tr>

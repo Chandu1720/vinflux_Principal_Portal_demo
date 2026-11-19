@@ -31,9 +31,20 @@ export interface SetupAnswers {
   credit: 'block' | 'warn' | 'off';
   supply: 'buy' | 'erp-production' | 'none';
   crm: 'yes' | 'no';
+  secondary: 'yes' | 'no';
+  claims: 'yes' | 'no';
+  collections: 'yes' | 'no';
+  procurement: 'vinflux' | 'erp' | 'hybrid' | 'no';
+  imports: 'yes' | 'no';
+  qc: 'yes' | 'no';
+  assembly: 'yes' | 'no';
+  replenishment: 'yes' | 'no';
+  performance: 'yes' | 'no';
+  tenders: 'yes' | 'no';
+  partnerLite: 'yes' | 'no';
 }
 
-const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes' };
+const DEFAULTS: SetupAnswers = { stock: 'erp', orders: 'yes', delivery: 'vinflux', prices: 'yes', cases: 'partners', consignment: 'yes', returns: 'yes', recall: 'yes', invoicing: 'erp', reservation: 'confirmation', credit: 'block', supply: 'buy', crm: 'yes', secondary: 'yes', claims: 'yes', collections: 'yes', procurement: 'vinflux', imports: 'yes', qc: 'yes', assembly: 'no', replenishment: 'yes', performance: 'yes', tenders: 'yes', partnerLite: 'yes' };
 const KEY = 'vinflux.setup.v1';
 
 type Q = { id: keyof SetupAnswers; q: string; help?: string; options: { id: string; label: string }[]; show?: (a: SetupAnswers, medical: boolean) => boolean };
@@ -41,14 +52,25 @@ const QUESTIONS: { group: string; items: Q[] }[] = [
   { group: 'Stock', items: [
     { id: 'stock', q: 'Where does your stock live?', help: 'ERP: VinFlux reads stock from your ERP (Zoho, SAP…) and never changes it. VinFlux: you keep stock here. Not tracked: orders only, no stock check.', options: [{ id: 'erp', label: 'In our ERP' }, { id: 'vinflux', label: 'In VinFlux' }, { id: 'none', label: 'Not tracked' }] },
     { id: 'supply', q: 'How do you get your products?', help: 'Manufacturing stays in your ERP. VinFlux only needs the finished stock.', options: [{ id: 'buy', label: 'We buy / import finished goods' }, { id: 'erp-production', label: 'We make them (ERP runs production)' }, { id: 'none', label: 'Not relevant' }] },
+    { id: 'procurement', q: 'Where do you raise purchase orders to your vendors?', show: (a) => a.supply !== 'none', help: 'VinFlux: POs, receipt, QC and invoice match here. ERP: shown here as incoming supply. Mixed: POs in the ERP, receipt and QC in VinFlux.', options: [{ id: 'vinflux', label: 'In VinFlux' }, { id: 'erp', label: 'In our ERP' }, { id: 'hybrid', label: 'Mixed' }, { id: 'no', label: 'Not needed' }] },
+    { id: 'imports', q: 'Do you import products (from suppliers abroad or your own plant abroad)?', show: (a) => a.supply !== 'none' && a.procurement !== 'no', help: 'Imports: shipments, documents, bill of entry, duty and landed cost per unit.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'qc', q: 'Must goods be inspected and released by QC before they can be sold?', show: (a) => a.stock !== 'none', help: 'Quality Control: purchase receipts, imports and returns wait in Quarantine until an inspector records and a second person releases them.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'assembly', q: 'Do you assemble products or build kits from components?', show: (a) => a.stock !== 'none', help: 'Assembly & Kitting: bill of materials, component consumption, serial genealogy and final QC. Not for full manufacturing — that stays in your ERP.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
   ] },
   { group: 'Selling', items: [
     { id: 'crm', q: 'Will your sales team track leads and deals in VinFlux?', help: 'Sales CRM: leads, opportunities, follow-ups and a team dashboard.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'secondary', q: 'Do you want to see what your partners hold and sell (secondary sales)?', help: 'Partners report stock and sales by Partner Lite, their own software, a file, or your field team — checked against what you delivered.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'replenishment', q: 'Should VinFlux suggest the next order to partners before they run out?', show: (a) => a.secondary === 'yes' && a.orders === 'yes', help: 'Replenishment: target days of cover × what the partner sells, minus what it holds and has on the way. The partner accepts, changes or rejects; accepted becomes an order.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'orders', q: 'Will partners’ orders come through VinFlux?', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'prices', q: 'Do you keep price lists or hospital rate contracts in VinFlux?', help: 'Orders need prices, so this stays on when orders are on.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'performance', q: 'Do you set partner targets and want a scorecard per partner?', show: (a) => a.orders === 'yes', help: 'Targets on your sales to them and/or their sales; scorecard covers achievement, fill rate, stock, expiry, payments, reporting and claims.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'partnerLite', q: 'Do some partners have no software of their own?', show: (a) => a.orders === 'yes', help: 'Partner Lite: a free portal where they order, report stock and sales, raise claims and see their statement.', options: [{ id: 'yes', label: 'Yes — give them Partner Lite' }, { id: 'no', label: 'No' }] },
+    { id: 'tenders', q: 'Do you bid in tenders or keep written agreements with your channel?', show: (a) => a.prices === 'yes' || a.orders === 'yes', help: 'Tenders & Agreements: bids to rate contracts; distributor, C&F and consignment agreements with renewal reminders.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+    { id: 'claims', q: 'Do you pay partners schemes after the sale (per unit sold, targets, display)?', help: 'Schemes & Claims: claims checked against verified secondary sales before you pay.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'reservation', q: 'When should stock be set aside for an order?', show: (a) => a.orders === 'yes', options: [{ id: 'submission', label: 'When received' }, { id: 'approval', label: 'When approved' }, { id: 'confirmation', label: 'When confirmed' }] },
     { id: 'credit', q: 'If a partner is over its credit limit…', show: (a) => a.orders === 'yes', options: [{ id: 'block', label: 'Block the order' }, { id: 'warn', label: 'Warn only' }, { id: 'off', label: 'No credit check' }] },
     { id: 'invoicing', q: 'Who issues the tax invoice?', show: (a) => a.orders === 'yes', options: [{ id: 'erp', label: 'Our ERP' }, { id: 'vinflux', label: 'VinFlux' }] },
+    { id: 'collections', q: 'Do you want to track payments and chase overdue partners in VinFlux?', help: 'Collections: ageing, payments and cheques, reminders, statements — and the credit check uses it.', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
     { id: 'delivery', q: 'How do you want to handle dispatch?', show: (a) => a.orders === 'yes', help: 'Full: shipments, trips, carriers, proof of delivery. Simple: mark shipped and delivered on the order.', options: [{ id: 'vinflux', label: 'Full logistics in VinFlux' }, { id: 'simple', label: 'Simple ship / deliver' }] },
   ] },
   { group: 'Hospitals and surgery', items: [
@@ -65,7 +87,20 @@ const QUESTIONS: { group: string; items: Q[] }[] = [
 export const plan = (a: SetupAnswers, medical: boolean) => {
   const on: ModuleId[] = ['go-to-market', 'users'];
   if (a.crm === 'yes') on.push('crm');
+  if (a.secondary === 'yes') on.push('secondary');
+  if (a.claims === 'yes') on.push('claims');
+  if (a.collections === 'yes') on.push('collections');
+  if (a.procurement !== 'no' && a.supply !== 'none') on.push('procurement');
+  if (a.imports === 'yes' && a.procurement !== 'no' && a.supply !== 'none') on.push('imports');
   if (a.stock !== 'none' || a.orders === 'yes') on.push('inventory');
+  if (a.qc === 'yes' && a.stock !== 'none') on.push('qc');
+  if (a.supply === 'erp-production' && a.stock !== 'none') on.push('production');
+  if (a.assembly === 'yes' && a.stock !== 'none') on.push('assembly');
+  if (a.replenishment === 'yes' && a.secondary === 'yes' && a.orders === 'yes') on.push('replenishment');
+  if (a.performance === 'yes' && a.orders === 'yes') on.push('performance');
+  if (a.partnerLite === 'yes' && a.orders === 'yes') on.push('partner-lite');
+  if (a.tenders === 'yes' && (a.prices === 'yes' || a.orders === 'yes')) on.push('tenders');
+  if (a.invoicing === 'vinflux' && a.orders === 'yes') on.push('invoicing');
   if (a.prices === 'yes' || a.orders === 'yes') on.push('price-lists');
   if (a.orders === 'yes') { on.push('orders'); if (a.delivery === 'vinflux') on.push('logistics'); }
   if (a.returns === 'yes' || a.recall === 'yes') on.push('returns');
@@ -74,6 +109,8 @@ export const plan = (a: SetupAnswers, medical: boolean) => {
   if (cases) on.push('surgical');
   const options: Record<string, OptionValue> = {
     'orders.invoicing': a.invoicing,
+    'procurement.inspection': a.qc === 'yes',
+    'procurement.owner': a.procurement === 'no' ? 'vinflux' : a.procurement,
     'orders.creditCheck': a.credit,
     'returns.creditNotes': a.invoicing === 'vinflux',
     'surgical.cases': a.cases === 'direct' || a.cases === 'both',

@@ -311,3 +311,19 @@ export const statsFor = (ownerId: string, period: string): OwnerStats => {
     stale: ls.filter((l) => isStale(l, leadOpen(l))).length + os.filter((o) => isStale(o, oppOpen(o))).length,
   };
 };
+
+/** Read-only numbers for the home dashboard (doesn't select or seed a principal). */
+export const crmSummary = (principalId: string) => {
+  const d = all()[principalId];
+  if (!d) return null;
+  const open = d.opps.filter(oppOpen);
+  const t = today();
+  return {
+    openLeads: d.leads.filter(leadOpen).length,
+    pipeline: open.reduce((a, o) => a + o.value, 0),
+    weighted: Math.round(open.reduce((a, o) => a + (o.value * o.probability) / 100, 0)),
+    due: d.acts.filter((a) => !a.done && a.due && a.due <= t).length,
+    overdue: d.acts.filter((a) => !a.done && a.due && a.due < t).length,
+    cold: d.leads.filter((l) => isStale(l, leadOpen(l))).length + d.opps.filter((o) => isStale(o, oppOpen(o))).length,
+  };
+};

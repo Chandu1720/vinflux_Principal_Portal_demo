@@ -52,6 +52,46 @@ export const Topbar: React.FC<TopbarProps> = ({
   } else if (location.pathname.startsWith('/users')) {
     pageTitle = 'Users & Roles';
     modeTag = 'Platform';
+  } else if (location.pathname.startsWith('/performance')) {
+    pageTitle = 'Partner Performance';
+  } else if (location.pathname.startsWith('/tenders')) {
+    pageTitle = 'Tenders & Agreements';
+  } else if (location.pathname.startsWith('/invoices')) {
+    pageTitle = 'Invoicing';
+  } else if (location.pathname.startsWith('/replenishment')) {
+    pageTitle = 'Replenishment';
+  } else if (location.pathname.startsWith('/assembly')) {
+    pageTitle = 'Assembly & Kitting';
+  } else if (location.pathname.startsWith('/approvals')) {
+    pageTitle = 'Approvals';
+  } else if (location.pathname.startsWith('/audit')) {
+    pageTitle = 'Audit Log';
+  } else if (location.pathname.startsWith('/data-sources')) {
+    pageTitle = 'Data Sources';
+  } else if (location.pathname.startsWith('/reports')) {
+    pageTitle = 'Reports';
+  } else if (location.pathname.startsWith('/production')) {
+    pageTitle = 'Production';
+  } else if (location.pathname.startsWith('/qc')) {
+    pageTitle = 'Quality Control';
+  } else if (location.pathname.startsWith('/imports')) {
+    pageTitle = 'Imports';
+    modeTag = 'Supply';
+  } else if (location.pathname.startsWith('/procurement')) {
+    pageTitle = 'Procurement & Vendors';
+    modeTag = 'Supply';
+  } else if (location.pathname.startsWith('/collections')) {
+    pageTitle = 'Collections';
+    modeTag = 'Finance';
+  } else if (location.pathname.startsWith('/dashboard')) {
+    pageTitle = 'Control tower';
+    modeTag = 'Overview';
+  } else if (location.pathname.startsWith('/claims')) {
+    pageTitle = 'Schemes & Claims';
+    modeTag = 'Commercial';
+  } else if (location.pathname.startsWith('/secondary')) {
+    pageTitle = 'Secondary Sales & Partner Stock';
+    modeTag = 'Channel';
   } else if (location.pathname.startsWith('/crm')) {
     pageTitle = 'Sales CRM';
     modeTag = 'Sales';
