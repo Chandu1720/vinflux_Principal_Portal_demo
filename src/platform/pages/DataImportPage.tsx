@@ -23,6 +23,19 @@ const sampleTable = (e: ImportEntity, ctx: ReturnType<typeof useImportContext>):
     const map: Record<string, string> = { WH01: 'WH-MEDC-06', WH02: 'WH-BHIW-01', WH03: 'WH-PEEN-04' };
     return [t[0], ...t.slice(1).map((r) => [map[r[0]] ?? r[0], ...r.slice(1)])];
   }
+  if (e.id === 'channel-stock') {
+    const batchP = ctx.products.find((p) => p.lifecycleStatus === 'Active' && p.trackingMode === 'Batch / Lot') ?? ctx.products[0];
+    const code = batchP?.variants?.[1]?.sku ?? batchP?.code ?? 'X';
+    const exp = (d: number) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
+    const ps = (ctx.partners ?? []).filter((p) => p.status === 'Active' && ['pt-dist', 'pt-ss', 'pt-dealer'].includes(p.partnerTypeId));
+    return [
+      ['Partner code', 'Item code', 'Batch', 'Serial', 'Expiry', 'Closing Qty'],
+      [ps[0]?.code ?? 'PTR-0001', code, 'L2610A', '', exp(420), '18'],
+      [ps[0]?.code ?? 'PTR-0001', code, 'L2603K', '', exp(55), '6'],
+      [ps[1]?.code ?? 'PTR-0002', code, 'L2610A', '', exp(420), '24'],
+      ['PTR-9999', code, 'L2610A', '', exp(420), '5'],
+    ];
+  }
   if (e.id === 'price-lines') {
     // Shape of an SAP condition-record export (KONP): material, amount, scale quantity / scale amount.
     return [
@@ -38,7 +51,7 @@ const sampleTable = (e: ImportEntity, ctx: ReturnType<typeof useImportContext>):
   return [
     ['Item Code', 'Item Name', 'Item Group', 'Division', 'Brand', 'HSN', 'GST', 'UOM', 'MRP', 'EAN', 'SAP Code'],
     ['TIB-INS-PE-03', 'Tibial Insert Polyethylene Size 3', 'Implantable Medical Device', 'Arthroplasty — Joint Replacement', 'Genius', '90213100', '5', 'Each', '24500', '', 'MAT-SAP-100231'],
-    ['VBP-HY-3302', 'Velocity Ceramic Rear Brake Pad Set — Creta', 'Automotive Spare Part', 'Automotive Aftermarket', 'Velocity', '87083000', '18', 'Set', '1650', '', 'MAT-SAP-100232'],
+    ['BC-HV-40G', 'Bone Cement High Viscosity 40 g', 'Single-Use Consumable', 'Hospital Consumables & Bio-Materials', 'Biorad', '30064000', '12', 'Each', '3850', '', 'MAT-SAP-100232'],
     ['SCR-CORT-35-20', 'Cortical Screw 3.5 x 20 mm', 'Implantable Medical Device', 'Trauma & Extremities', 'Genius', '90211000', '5', 'Each', '1850', '8901234999990', 'MAT-SAP-100233'],
     [existing?.code ?? 'X', existing?.name ?? 'X', '', '', '', '', '', '', String((existing?.pricingReference?.mrp ?? 1000) + 500), '', ''],
     ['DRP-SURG-01', 'Surgical Drape Large', 'Disposable Drape', 'Hospital Consumables & Bio-Materials', 'Biorad', '6307', '12', 'Each', '420', '', ''],
@@ -167,7 +180,7 @@ const DataImportPage: React.FC = () => {
                   <Button onClick={() => setStep(0)}>Back</Button>
                   <Button size="sm" variant="ghost" icon={<Download size={13} />} onClick={() => template(entity)}>Download template</Button>
                   <span className="g2-spacer" />
-                  <Button variant="soft" onClick={() => loadTable(sampleTable(entity, ctx), entity.id === 'opening-stock' ? 'sap-mb52-stock-export.xlsx (sample)' : entity.id === 'price-lines' ? 'sap-konp-prices.xlsx (sample)' : 'erp-item-master.xlsx (sample)')}>Use a sample ERP export</Button>
+                  <Button variant="soft" onClick={() => loadTable(sampleTable(entity, ctx), entity.id === 'opening-stock' ? 'sap-mb52-stock-export.xlsx (sample)' : entity.id === 'channel-stock' ? 'distributor-stock-statement.xlsx (sample)' : entity.id === 'price-lines' ? 'sap-konp-prices.xlsx (sample)' : 'erp-item-master.xlsx (sample)')}>Use a sample ERP export</Button>
                 </div>
               </div>
             )}

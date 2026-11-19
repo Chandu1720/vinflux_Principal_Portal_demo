@@ -22,6 +22,8 @@ export interface ImportContext {
   industryPacks: IndustryPack[];
   attributeTemplates: Record<string, AttributeDefinition[]>;
   warehouses: Warehouse[];
+  /** Channel partners (Go-to-Market) — for partner stock reports. */
+  partners?: { id: string; name: string; code: string; partnerTypeId: string; status: string; institution?: unknown }[];
   importProducts: (created: Product[], updates: { id: string; patch: Partial<Product> }[]) => void;
   revertProductImport: (createdIds: string[], before: { id: string; values: Partial<Product> }[]) => void;
 }

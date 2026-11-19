@@ -2,19 +2,20 @@ import type { ImportBatch, ImportContext, ImportEntity, RowResult } from './type
 import { ENTITIES } from './entities';
 import { emit } from '../events';
 import { loadJson, newId, saveJson } from '../store';
+import { workspaceKey } from '../workspace';
 
-const KEY = 'vinflux.imports.v1';
-const MAP_KEY = 'vinflux.importMappings.v1';
+const KEY = () => workspaceKey('vinflux.imports.v1');
+const MAP_KEY = () => workspaceKey('vinflux.importMappings.v1');
 const listeners = new Set<() => void>();
 
-export const importHistory = (): ImportBatch[] => loadJson<ImportBatch[]>(KEY, []);
-const save = (list: ImportBatch[]) => { saveJson(KEY, list); listeners.forEach((l) => l()); };
+export const importHistory = (): ImportBatch[] => loadJson<ImportBatch[]>(KEY(), []);
+const save = (list: ImportBatch[]) => { saveJson(KEY(), list); listeners.forEach((l) => l()); };
 export const subscribeImports = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 
-export const savedMapping = (entityId: string, profile: string): Record<string, string> | undefined => loadJson<Record<string, Record<string, string>>>(MAP_KEY, {})[`${entityId}|${profile}`];
+export const savedMapping = (entityId: string, profile: string): Record<string, string> | undefined => loadJson<Record<string, Record<string, string>>>(MAP_KEY(), {})[`${entityId}|${profile}`];
 export const saveMapping = (entityId: string, profile: string, map: Record<string, string>) => {
-  const all = loadJson<Record<string, Record<string, string>>>(MAP_KEY, {});
-  all[`${entityId}|${profile}`] = map; saveJson(MAP_KEY, all);
+  const all = loadJson<Record<string, Record<string, string>>>(MAP_KEY(), {});
+  all[`${entityId}|${profile}`] = map; saveJson(MAP_KEY(), all);
 };
 
 /** Imports only rows without errors. Returns the batch. */

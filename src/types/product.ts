@@ -332,6 +332,8 @@ export interface Principal {
   code: string;
   country: string;
   role: string;
+  /** Industry workspace the principal belongs to. */
+  industry: IndustryPackId;
 }
 
 export type PermResource = 'products' | 'gtm' | 'pricing' | 'inventory' | 'data' | 'platform';
@@ -343,6 +345,8 @@ export interface CurrentUser {
   role: string;
   organization: string;
   email?: string;
+  /** Industry workspace of the user's company — shapes the whole app. */
+  workspace?: IndustryPackId;
   /** Booleans derived from the user's roles (kept for existing screens). */
   permissions: {
     canManageConfig: boolean;

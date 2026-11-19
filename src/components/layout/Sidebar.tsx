@@ -2,11 +2,12 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext.tsx';
 import { usePlatform } from '../../platform/PlatformContext';
+import { WORKSPACE_LABEL } from '../../platform/workspace';
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { activePrincipal, principals, setActivePrincipal, currentUser, showToast, switchUser } = useApp();
+  const { activePrincipal, principals, setActivePrincipal, currentUser, showToast, switchUser, workspace, signOut } = useApp();
 
   const isProducts = location.pathname === '/' || location.pathname.startsWith('/products');
   const isBranches = location.pathname.startsWith('/branches');
@@ -40,7 +41,7 @@ export const Sidebar: React.FC = () => {
             VinFlux <span className="vf-brand-badge">2.0</span>
           </div>
         </div>
-        <span style={{ fontSize: '11px', color: '#94a3b8' }}>ERP Core</span>
+        <span style={{ fontSize: '10.5px', color: '#c4b5fd', fontWeight: 600, textAlign: 'right', lineHeight: 1.2 }} title="Industry workspace of your company">{WORKSPACE_LABEL[workspace]}</span>
       </div>
 
       {/* Active Principal Context */}
@@ -112,6 +113,12 @@ export const Sidebar: React.FC = () => {
           </button>
         </div>}
 
+        {/* Medical: surgery cases, sets, implants */}
+        {enabled('surgical') && <div className="vf-nav-section">
+          <div className="vf-nav-heading">Surgery & Implants</div>
+          {nav('/surgical', 'Cases, Sets & Implants', ic('M9 2h6v4H9zM4 6h16v14H4zM12 10v6M9 13h6'))}
+        </div>}
+
         {/* Commercial */}
         {enabled('price-lists') && <div className="vf-nav-section">
           <div className="vf-nav-heading">Commercial</div>
@@ -147,7 +154,11 @@ export const Sidebar: React.FC = () => {
             </svg>
             <span>Warehouse Master</span>
           </button>
-          {enabled('inventory') && nav('/inventory', 'Stock on Hand', ic('M3 7l9-4 9 4-9 4-9-4zm0 5l9 4 9-4M3 17l9 4 9-4'))}
+          {enabled('orders') && nav('/orders', 'Orders', ic('M3 3h2l2.4 12.4a2 2 0 002 1.6h7.7a2 2 0 002-1.6L21 7H6M10 21h.01M17 21h.01'))}
+          {enabled('logistics') && nav('/logistics', 'Logistics', ic('M1 3h15v13H1zM16 8h4l3 3v5h-7M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z'))}
+          {enabled('returns') && nav('/returns', 'Returns', ic('M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3'))}
+          {enabled('recall') && nav('/recall', 'Complaints & Recall', ic('M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z'))}
+          {enabled('inventory') && nav('/inventory', 'Inventory', ic('M3 7l9-4 9 4-9 4-9-4zm0 5l9 4 9-4M3 17l9 4 9-4'))}
         </div>
 
         {/* Platform */}
@@ -170,7 +181,8 @@ export const Sidebar: React.FC = () => {
             <div style={{ marginTop: '2px' }}>
               <span className="vf-badge" onClick={() => navigate('/users')} style={{ cursor: 'pointer', fontSize: '9.5px', padding: '1px 6px', display: 'inline-block' }} title="Users & Roles — sign in as another user">
                 {currentUser.scope && (currentUser.scope.territoryIds.length || currentUser.scope.warehouseIds.length) ? 'Scoped · switch user ▾' : 'Switch user ▾'}
-              </span>
+              </span>{' '}
+              <span className="vf-badge" onClick={signOut} style={{ cursor: 'pointer', fontSize: '9.5px', padding: '1px 6px', display: 'inline-block' }} title="Sign out">Sign out</span>
             </div>
           </div>
         </div>

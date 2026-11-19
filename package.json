@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "service": "tsx server/standalone.ts",
+    "agent": "tsx server/agent.ts",
+    "test:connectors": "tsx --test --test-timeout=20000 server/test/adapters.test.ts",
+    "typecheck:server": "tsc -p tsconfig.server.json"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -30,6 +34,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.89.0",
+    "tsx": "^4.20.6",
     "typescript": "~7.0.2",
     "vite": "^8.3.5"
   }

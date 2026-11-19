@@ -10,7 +10,8 @@ import type {
   UomPackagingDefault,
   InventoryPolicyDefaults,
   Principal,
-  CurrentUser
+  CurrentUser,
+  IndustryPackId
 } from '../types/product.ts';
 
 export const initialCurrentUser: CurrentUser = {
@@ -38,13 +39,16 @@ export const initialUsers: CurrentUser[] = [
   }
 ];
 
+/** Which industry workspace a portfolio belongs to (portfolios not listed are medical). */
+export const PORTFOLIO_INDUSTRY: Record<string, IndustryPackId> = { 'port-agri': 'agri', 'port-auto': 'automotive', 'port-elec': 'electronics' };
+
 export const initialPrincipals: Principal[] = [
-  { id: "princ-biorad", name: "Biorad Medisys Private Limited", code: "BIORAD-MED", country: "India", role: "Manufacturer & Principal" },
-  { id: "princ-zimmer", name: "Apex Surgical Ortho GmbH", code: "APEX-ORTHO", country: "Germany", role: "Technology Principal" },
-  { id: "princ-robotics", name: "OmniNav Surgical Robotics Corp", code: "OMNI-NAV", country: "USA", role: "Original Equipment Manufacturer" },
-  { id: "princ-haritha", name: "Haritha Agro Sciences Ltd", code: "HARITHA-AGRI", country: "India", role: "Manufacturer & Principal — Agri inputs" },
-  { id: "princ-velocity", name: "Velocity Auto Components Pvt Ltd", code: "VELOCITY-AUTO", country: "India", role: "Manufacturer & Principal — Automotive aftermarket" },
-  { id: "princ-voltix", name: "Voltix Electronics India Pvt Ltd", code: "VOLTIX-ELEC", country: "India", role: "Brand Owner & Principal — Electronics" }
+  { id: "princ-biorad", name: "Biorad Medisys Private Limited", code: "BIORAD-MED", country: "India", role: "Manufacturer & Principal", industry: "medical-devices" },
+  { id: "princ-zimmer", name: "Apex Surgical Ortho GmbH", code: "APEX-ORTHO", country: "Germany", role: "Technology Principal", industry: "medical-devices" },
+  { id: "princ-robotics", name: "OmniNav Surgical Robotics Corp", code: "OMNI-NAV", country: "USA", role: "Original Equipment Manufacturer", industry: "medical-devices" },
+  { id: "princ-haritha", name: "Haritha Agro Sciences Ltd", code: "HARITHA-AGRI", country: "India", role: "Manufacturer & Principal — Agri inputs", industry: "agri" },
+  { id: "princ-velocity", name: "Velocity Auto Components Pvt Ltd", code: "VELOCITY-AUTO", country: "India", role: "Manufacturer & Principal — Automotive aftermarket", industry: "automotive" },
+  { id: "princ-voltix", name: "Voltix Electronics India Pvt Ltd", code: "VOLTIX-ELEC", country: "India", role: "Brand Owner & Principal — Electronics", industry: "electronics" }
 ];
 
 export const initialPortfolios: Portfolio[] = [

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Ban, Eye, Pencil, FileEdit, PlayCircle, Trash2, UserPlus, Users } from 'lucide-react';
+import { Ban, CloudDownload, Eye, Pencil, FileEdit, PlayCircle, Trash2, UserPlus, Users } from 'lucide-react';
+import { PartnerErpImportDrawer } from '../../../../platform/integrations/ErpImport';
 import { InstitutionDrawer } from './InstitutionDrawer';
 import { PartnerTypeChooser } from './PartnerTypeChooser';
 import { EditDetailsDrawer } from './EditDetailsDrawer';
@@ -40,6 +41,8 @@ const PartnersPage: React.FC = () => {
   const [addInst, setAddInst] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partner | null>(null);
   const [choose, setChoose] = useState(params.get('new') === '1');
+  const [erpOpen, setErpOpen] = useState(false);
+  const canEditPartners = can.onboardPartners;
   const focusId = params.get('focus');
   const focusTab = params.get('tab') ?? undefined;
 
@@ -122,7 +125,7 @@ const PartnersPage: React.FC = () => {
       <PageHeader
         title="Partners"
         description="Partner register: onboarding pipeline, trade status (licences + credit) and portal access in one place."
-        actions={<Button variant="primary" icon={<UserPlus size={15} />} onClick={() => setChoose(true)}>Onboard partner</Button>}
+        actions={<>{canEditPartners && <Button icon={<CloudDownload size={15} />} onClick={() => setErpOpen(true)}>Import from ERP</Button>}<Button variant="primary" icon={<UserPlus size={15} />} onClick={() => setChoose(true)}>Onboard partner</Button></>}
       />
       <ScopeBanner scope={territoryScope} territories={data.territories} hidden={data.partners.length - visible.length} />
       <div className="g2-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', marginBottom: 16 }}>
@@ -161,6 +164,7 @@ const PartnersPage: React.FC = () => {
         <ConfirmDialog open title={confirmText.t} message={confirmText.m} confirmLabel={confirmText.l} tone={confirmText.tone} loading={pending} onCancel={() => setConfirm(null)} onConfirm={doConfirm} />
       )}
       {editing && config && <EditDetailsDrawer partner={editing} config={config} onClose={() => setEditing(null)} />}
+      {erpOpen && <PartnerErpImportDrawer onClose={() => setErpOpen(false)} />}
       {choose && config && (
         <PartnerTypeChooser config={config} channels={data.channels} onClose={closeChooser}
           onPick={(typeId, form) => { closeChooser(); if (form === 'short') setAddInst(typeId); else navigate(`${ROUTES.onboard}?type=${typeId}`); }} />

@@ -5,7 +5,8 @@
 import type { Product } from '../../types/product.ts';
 import type { ImportEntity, RowResult, RowValues } from './types';
 import { daysBetween, norm, parseDate, parseNumber, today } from './values';
-import { addOpening, balances, reverseImport, serialsInStock } from '../../modules/inventory/stockStore';
+import { addOpening, balances, post, reverseImport, serialsInStock } from '../../modules/inventory/stockStore';
+import type { LocType } from '../../modules/inventory/stockStore';
 import type { StockStatus } from '../../modules/inventory/stockStore';
 import { gtinError, normalise, usedGtins } from '../../utils/gs1.ts';
 import { packOf } from '../../utils/productLifecycle.ts';
@@ -150,9 +151,13 @@ const products: ImportEntity = {
     { key: 'mrp', label: 'MRP (₹)', example: '24500', aliases: ['mrp', 'maxretailprice', 'listprice'] },
     { key: 'gtin', label: 'GTIN', example: '', aliases: ['gtin', 'ean', 'barcode', 'upc'] },
     { key: 'erp', label: 'ERP code', example: 'MAT-SAP-100231', aliases: ['erpcode', 'externalid', 'sapcode', 'legacycode'] },
+    { key: 'tracking', label: 'Tracking', example: 'Batch', aliases: ['tracking', 'trackingmode', 'batchserial'], hint: 'Batch, Serial, Batch + Serial or None — used for new products' },
+    { key: 'cost', label: 'Standard cost (₹)', example: '9800', aliases: ['cost', 'standardcost', 'unitcost', 'purchaserate', 'valuationrate'] },
+    { key: 'description', label: 'Description', example: '', aliases: ['description', 'longdescription', 'salesdescription'] },
   ],
   validate: (rows, ctx) => {
     const seen = new Map<string, number>();
+    const TRACK: Record<string, Product['trackingMode']> = { batch: 'Batch / Lot', 'batch / lot': 'Batch / Lot', lot: 'Batch / Lot', serial: 'Serial', 'batch + serial': 'Batch + Serial', none: 'None' };
     return rows.map((v, i): RowResult => {
       const errors: string[] = []; const warnings: string[] = [];
       const existing = ctx.products.find((p) => p.code.toLowerCase() === v.code.toLowerCase());
@@ -162,6 +167,10 @@ const products: ImportEntity = {
       if (v.hsn && !/^\d{8}$/.test(v.hsn)) errors.push(`HSN “${v.hsn}” must be 8 digits.`);
       const mrp = parseNumber(v.mrp);
       if (mrp === null || (typeof mrp === 'number' && mrp < 0)) errors.push(`MRP “${v.mrp}” is not a valid amount.`);
+      const cost = parseNumber(v.cost ?? '');
+      if (cost === null || (typeof cost === 'number' && cost < 0)) errors.push(`Cost “${v.cost}” is not a valid amount.`);
+      const tracking = v.tracking ? TRACK[v.tracking.trim().toLowerCase()] : undefined;
+      if (v.tracking && !tracking) warnings.push(`Tracking “${v.tracking}” not recognised — the product type's default is used.`);
       if (v.gtin) {
         const e = gtinError(v.gtin);
         if (e) errors.push(`GTIN ${v.gtin}: ${e}`);
@@ -176,7 +185,9 @@ const products: ImportEntity = {
         if (v.brand) patch.brand = v.brand;
         if (v.hsn) patch.hsnCode = v.hsn;
         if (gst) patch.taxRate = gst;
-        if (typeof mrp === 'number') patch.pricingReference = { ...existing.pricingReference, mrp };
+        if (typeof mrp === 'number' || typeof cost === 'number') patch.pricingReference = { ...existing.pricingReference, ...(typeof mrp === 'number' ? { mrp } : {}), ...(typeof cost === 'number' ? { standardCost: cost } : {}) };
+        if (v.description && v.description !== existing.description) patch.description = v.description;
+        if (tracking && tracking !== existing.trackingMode) warnings.push(`ERP tracks it as “${tracking}”, VinFlux as “${existing.trackingMode}” — not changed automatically; check it in Product Master.`);
         if (v.erp) patch.externalRef = v.erp;
         if (!Object.keys(patch).length) warnings.push('No changes — row will be skipped.');
         if (existing.lifecycleStatus === 'Active' && Object.keys(patch).length) warnings.push('Active product: the change is applied and recorded in its history.');
@@ -197,14 +208,14 @@ const products: ImportEntity = {
         const pack = ctx.industryPacks.find((pk) => pk.id === packOf(type.id, ctx.productTypes));
         const now = today();
         create = {
-          id: `prod-imp-${Date.now().toString(36)}${i}`, name: v.name, code: v.code, description: '', portfolioId: pf.id, categoryId: cat?.id ?? '', subCategoryId: cat?.subCategories[0]?.id ?? '',
+          id: `prod-imp-${Date.now().toString(36)}${i}`, name: v.name, code: v.code, description: v.description ?? '', portfolioId: pf.id, categoryId: cat?.id ?? '', subCategoryId: cat?.subCategories[0]?.id ?? '',
           principalId: '', brand: v.brand, productTypeId: type.id, baseUom: v.uom || 'Each', lifecycleStatus: 'Draft', approvalStatus: 'Draft',
-          trackingMode: (type.defaultTracking as Product['trackingMode']) || pack?.defaultTracking || 'None', hsnCode: v.hsn || pack?.defaultHsn || '', taxRate: gst || pack?.defaultTax || '18%',
+          trackingMode: tracking ?? ((type.defaultTracking as Product['trackingMode']) || pack?.defaultTracking || 'None'), hsnCode: v.hsn || pack?.defaultHsn || '', taxRate: gst || pack?.defaultTax || '18%',
           sourceSystem: 'Data import', externalRef: v.erp, hasVariants: false, variantCount: 0, updatedAt: now, updatedBy: ctx.actor, attributes: {},
           inventoryPolicy: { inheritDefaults: true, minSafetyThreshold: type.defaultMinStockThreshold, reorderPoint: Math.round(type.defaultMinStockThreshold * 1.5), reorderQty: type.defaultMinStockThreshold * 2, leadTimeDays: 30, safetyStockDays: 30 },
           variants: [], identifiers: v.gtin ? [{ type: 'GTIN', value: v.gtin, isPrimary: true, uom: 'Product level', source: 'Import', status: 'Active' }] : [],
-          uomHierarchy: [], trackingRules: { mode: type.defaultTracking, mfgDateRequired: type.defaultTracking !== 'None', expiryDateRequired: type.defaultTracking.includes('Batch'), minShelfLifeDistributorDays: 0, minShelfLifeInstitutionDays: 0, udiDiRequired: pack?.id === 'medical-devices', qcInspectionRequired: pack?.id !== 'general' },
-          documents: [], pricingReference: { isEngineConnected: false, engineSource: 'Import', lastSync: now, mrp: typeof mrp === 'number' ? mrp : 0, currency: 'INR', dealerTransferCap: 0, institutionalTenderCap: 0, govPriceCapEnforced: pack?.id === 'medical-devices', marginFloorPercent: 0, priceListsLinked: [] },
+          uomHierarchy: [], trackingRules: { mode: tracking ?? type.defaultTracking, mfgDateRequired: (tracking ?? type.defaultTracking) !== 'None', expiryDateRequired: (tracking ?? type.defaultTracking).includes('Batch'), minShelfLifeDistributorDays: 0, minShelfLifeInstitutionDays: 0, udiDiRequired: pack?.id === 'medical-devices', qcInspectionRequired: pack?.id !== 'general' },
+          documents: [], pricingReference: { isEngineConnected: false, engineSource: 'Import', lastSync: now, mrp: typeof mrp === 'number' ? mrp : 0, ...(typeof cost === 'number' ? { standardCost: cost } : {}), currency: 'INR', dealerTransferCap: 0, institutionalTenderCap: 0, govPriceCapEnforced: pack?.id === 'medical-devices', marginFloorPercent: 0, priceListsLinked: [] },
           integrationMapping: v.erp ? [{ system: 'ERP (import)', entityType: 'Material', externalId: v.erp, status: 'Mapped', lastSync: now, mappingDirection: 'Inbound' }] : [],
           changeHistory: [{ field: 'Created', prevValue: '--', newValue: 'Draft', changedBy: ctx.actor, changedAt: now, reason: 'Data import' }],
         };
@@ -302,7 +313,56 @@ const priceLines: ImportEntity = {
   },
 };
 
-export const ENTITIES: ImportEntity[] = [openingStock, products, priceLines];
+/* ------------------------------------------------------------------ */
+/* Partner stock report (channel stock)                               */
+/* ------------------------------------------------------------------ */
+
+interface ChannelResolved { partnerId: string; locType: LocType; productId: string; variantSku: string | null; batch: string; serial: string | null; expiryDate: string | null; qty: number }
+const channelStock: ImportEntity = {
+  id: 'channel-stock',
+  label: 'Partner stock report',
+  module: 'inventory',
+  description: 'Stock held by C&F agents, distributors and hospitals (consignment) — e.g. a monthly stock statement. Each report replaces that holder’s previous figures; it can be undone.',
+  columns: [
+    { key: 'partner', label: 'Partner code or name', required: true, example: 'PTR-0002', aliases: ['partner', 'partnercode', 'distributor', 'stockist', 'customer', 'party'] },
+    { key: 'product', label: 'Product code / SKU / GTIN', required: true, example: 'EVO-TRAY-SZ3-10L', aliases: ['material', 'item', 'itemcode', 'sku', 'productcode', 'gtin'] },
+    { key: 'batch', label: 'Batch / lot', example: 'B2611A', aliases: ['batch', 'lot', 'batchno'] },
+    { key: 'serial', label: 'Serial no.', example: '', aliases: ['serial', 'serialno'] },
+    { key: 'expiry', label: 'Expiry date', example: '2030-12-31', aliases: ['expiry', 'expirydate', 'exp'] },
+    { key: 'qty', label: 'Closing quantity', required: true, example: '12', aliases: ['qty', 'quantity', 'closing', 'closingqty', 'closingstock', 'stock'] },
+  ],
+  validate: (rows, ctx) => rows.map((v, i): RowResult => {
+    const errors: string[] = []; const warnings: string[] = [];
+    const p = (ctx.partners ?? []).find((x) => x.code.toLowerCase() === v.partner.trim().toLowerCase() || x.name.toLowerCase() === v.partner.trim().toLowerCase());
+    if (!p) errors.push(`Unknown partner “${v.partner}”.`);
+    else if (p.status !== 'Active') warnings.push(`${p.name} is ${p.status}.`);
+    const hit = findProduct(v.product, ctx.products);
+    if (!hit) errors.push(`Unknown product “${v.product}”.`);
+    const qty = parseNumber(v.qty);
+    if (typeof qty !== 'number' || qty < 0) errors.push(`Quantity “${v.qty}” is not valid.`);
+    const exp = parseDate(v.expiry);
+    if (exp === null) errors.push(`Expiry “${v.expiry}” is not a date.`);
+    if (exp && exp < today()) warnings.push(`Batch ${v.batch} expired on ${exp} — it will show as expired channel stock.`);
+    const locType: LocType = p?.partnerTypeId === 'pt-cnf' ? 'CNF' : p?.institution ? 'HOSPITAL' : 'PARTNER';
+    const resolved: ChannelResolved | undefined = p && hit && typeof qty === 'number' ? { partnerId: p.id, locType, productId: hit.product.id, variantSku: hit.variantSku, batch: v.batch || '—', serial: v.serial || null, expiryDate: exp ?? null, qty } : undefined;
+    return { row: i + 2, values: v, errors, warnings, action: 'update', resolved };
+  }),
+  apply: (rows, ctx, _opts, importId, source) => {
+    const lines = rows.map((r) => r.resolved as ChannelResolved);
+    const holders = Array.from(new Set(lines.map((l) => l.partnerId)));
+    // A stock report is a full count: zero the holder's old figures, then post the reported ones.
+    const old = balances().filter((b) => holders.includes(b.warehouseId) && b.locType !== 'TRANSIT' && b.locType !== 'COMPANY');
+    const base = { bin: '', mfgDate: null, unitCost: null, status: 'Available' as const, importId, source: `Partner stock report (${source})`, by: ctx.actor, refId: null };
+    post([
+      ...old.map((b) => ({ ...base, type: 'PARTNER_REPORT' as const, locType: b.locType, warehouseId: b.warehouseId, productId: b.productId, variantSku: b.variantSku, batch: b.batch, serial: b.serial, expiryDate: b.expiryDate, unitCost: b.unitCost, status: b.status, qty: -b.qty })),
+      ...lines.filter((l) => l.qty > 0).map((l) => ({ ...base, type: 'PARTNER_REPORT' as const, locType: l.locType, warehouseId: l.partnerId, productId: l.productId, variantSku: l.variantSku, batch: l.batch, serial: l.serial, expiryDate: l.expiryDate, qty: l.qty, unitCost: ctx.products.find((p) => p.id === l.productId)?.pricingReference?.standardCost ?? null })),
+    ]);
+    return { refs: { holders }, summary: `${lines.length} line(s) for ${holders.length} holder(s); previous figures replaced` };
+  },
+  undo: (_refs, ctx, importId) => `${reverseImport(importId, ctx.actor)} stock line(s) reversed`,
+};
+
+export const ENTITIES: ImportEntity[] = [openingStock, products, priceLines, channelStock];
 
 /** Auto-match file headers to entity columns (exact key, label or known ERP alias). */
 export const autoMatch = (headers: string[], entity: ImportEntity, saved?: Record<string, string>): Record<string, string> => {

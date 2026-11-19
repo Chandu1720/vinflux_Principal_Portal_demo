@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# VinFlux integration service secrets
+server/connectors.json
+.env
+.env.local

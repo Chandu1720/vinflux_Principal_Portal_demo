@@ -3,6 +3,7 @@ import { MODULES } from './modules';
 import type { ModuleId } from './modules';
 import { emit } from './events';
 import { loadJson, saveJson } from './store';
+import { currentWorkspace } from './workspace';
 
 const KEY = 'vinflux.modules.v2';
 /**
@@ -30,7 +31,8 @@ const Ctx = createContext<PlatformCtx | undefined>(undefined);
 
 export const PlatformProvider: React.FC<{ principalId: string; children: React.ReactNode }> = ({ principalId, children }) => {
   const [all, setAll] = useState<Record<string, ModuleId[]>>(loadOff);
-  const enabledIds = useMemo(() => MODULES.filter((m) => m.status === 'available' && !(all[principalId] ?? []).includes(m.id)).map((m) => m.id), [all, principalId]);
+  const ws = currentWorkspace();
+  const enabledIds = useMemo(() => MODULES.filter((m) => m.status === 'available' && (!m.industries?.length || m.industries.includes(ws)) && !(all[principalId] ?? []).includes(m.id)).map((m) => m.id), [all, principalId, ws]);
   const enabled = useCallback((id: ModuleId) => MODULES.find((m) => m.id === id)?.core || enabledIds.includes(id), [enabledIds]);
 
   const setEnabled = useCallback((id: ModuleId, on: boolean, actor: string) => {

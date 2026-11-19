@@ -1,10 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle, ArrowDown, ArrowUp, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, CloudDownload, Copy, Download,
+  Eye, FileSpreadsheet, Filter, FolderTree, Gauge, LayoutGrid, Layers, List, MoreHorizontal, Package, PackageSearch, Pencil,
+  Plus, Puzzle, Ruler, ScanBarcode, Search, Send, Settings2, ShieldCheck, SlidersHorizontal, Tag, Tags, Upload, X, Archive, Minus, Fingerprint,
+} from 'lucide-react';
 import { useApp } from '../../context/AppContext.tsx';
 import type { Product } from '../../types/product.ts';
 import { LifecycleDialog, availableActions } from './LifecycleDialog.tsx';
+import type { LifecycleAction } from './LifecycleDialog.tsx';
 import { IndustryPacksDrawer } from './IndustryPacksDrawer.tsx';
 import { packOf } from '../../utils/productLifecycle.ts';
-import type { LifecycleAction } from './LifecycleDialog.tsx';
 
 interface ProductListProps {
   onViewProduct: (productId: string) => void;
@@ -13,844 +18,517 @@ interface ProductListProps {
   onOpenConfigStudio: (section?: string) => void;
   onPrintLabel: (product: Product) => void;
   onOpenImport: () => void;
+  onOpenErpImport?: () => void;
   onOpenExport: () => void;
   searchTerm?: string;
 }
 
+type Status = Product['lifecycleStatus'];
+type SortKey = 'name' | 'updated' | 'mrp';
+const STATUS_TABS: { id: '' | Status; label: string }[] = [
+  { id: '', label: 'All' }, { id: 'Active', label: 'Active' }, { id: 'Draft', label: 'Draft' }, { id: 'Pending Approval', label: 'Pending' }, { id: 'Retired', label: 'Retired' },
+];
+const PILL: Record<Status, string> = { Active: 'pl-pill-active', Draft: 'pl-pill-draft', 'Pending Approval': 'pl-pill-pending', Retired: 'pl-pill-retired' };
+const TRACK_ICON: Record<Product['trackingMode'], React.ReactNode> = {
+  'Batch + Serial': <Layers size={14} />, 'Batch / Lot': <Boxes size={14} />, Serial: <Fingerprint size={14} />, None: <Minus size={14} />,
+};
+const SWATCHES = [
+  ['#eff6ff', '#1d4ed8'], ['#ecfdf5', '#047857'], ['#fef3c7', '#b45309'], ['#f5f3ff', '#6d28d9'],
+  ['#fdf2f8', '#be185d'], ['#ecfeff', '#0e7490'], ['#fff7ed', '#c2410c'], ['#f1f5f9', '#334155'],
+];
+const swatch = (key: string) => { let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return SWATCHES[h % SWATCHES.length]; };
+const initials = (name: string) => name.split(/[\s\-/]+/).filter((w) => /^[A-Za-z]/.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'P';
+const fmtDate = (d: string) => { const t = new Date(d); return Number.isNaN(t.getTime()) ? d : t.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); };
+const fmtINR = (n: number) => (n ? `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '');
+/** A record that can't go live as-is: no code, no valid HSN, or no GST rate. */
+const needsAttention = (p: Product) => !p.code || !/^\d{6,8}$/.test(p.hsnCode || '') || !p.taxRate;
+const VIEW_KEY = 'vinflux.productList.view';
+const readView = (): 'table' | 'grid' => { try { return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'table'; } catch { return 'table'; } };
+
+/** Closes a popover on outside click / Escape. */
+const useDismiss = (open: boolean, close: () => void, ref: React.RefObject<HTMLElement | null>) => {
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) close(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('mousedown', down);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+  }, [open, close, ref]);
+};
+
+const Menu: React.FC<{ trigger: (toggle: () => void, open: boolean) => React.ReactNode; wide?: boolean; children: (close: () => void) => React.ReactNode }> = ({ trigger, wide, children }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const close = React.useCallback(() => setOpen(false), []);
+  useDismiss(open, close, ref);
+  return (
+    <div className="pl-menu-wrap" ref={ref}>
+      {trigger(() => setOpen((o) => !o), open)}
+      {open && <div className={`pl-menu${wide ? ' pl-menu-wide' : ''}`} role="menu">{children(close)}</div>}
+    </div>
+  );
+};
+
+/** Row "more" menu — fixed-positioned so the scrollable table can't clip it. */
+const RowMenu: React.FC<{ children: (close: () => void) => React.ReactNode }> = ({ children }) => {
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const close = React.useCallback(() => setPos(null), []);
+  useDismiss(!!pos, close, ref);
+  const place = React.useCallback(() => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r || r.bottom < 0 || r.top > window.innerHeight) { setPos(null); return; }
+    setPos({ top: Math.min(r.bottom + 6, window.innerHeight - 220), right: window.innerWidth - r.right });
+  }, []);
+  useEffect(() => {
+    if (!pos) return;
+    // Follow the button when the page or the table scrolls (clicking can scroll the table into view).
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', close); };
+  }, [pos, place, close]);
+  return (
+    <div ref={ref} style={{ display: 'inline-flex' }}>
+      <button ref={btn} type="button" className="pl-icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded={!!pos}
+        onClick={(e) => { e.stopPropagation(); if (pos) close(); else place(); }}>
+        <MoreHorizontal size={16} />
+      </button>
+      {pos && <div className="pl-menu" role="menu" style={{ position: 'fixed', top: pos.top, right: pos.right }} onClick={(e) => e.stopPropagation()}>{children(close)}</div>}
+    </div>
+  );
+};
+
+const MenuItem: React.FC<{ icon: React.ReactNode; title: string; desc?: string; danger?: boolean; disabled?: boolean; onClick: () => void }> = ({ icon, title, desc, danger, disabled, onClick }) => (
+  <button type="button" role="menuitem" className={`pl-menu-item${danger ? ' danger' : ''}`} disabled={disabled} style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined} onClick={onClick}>
+    {icon}<span>{title}{desc && <small>{desc}</small>}</span>
+  </button>
+);
+
 export const ProductList: React.FC<ProductListProps> = ({
-  onViewProduct,
-  onEditProduct,
-  onCreateProduct,
-  onOpenConfigStudio,
-  onPrintLabel,
-  onOpenImport,
-  onOpenExport,
-  searchTerm = ''
+  onViewProduct, onEditProduct, onCreateProduct, onOpenConfigStudio, onPrintLabel, onOpenImport, onOpenErpImport, onOpenExport, searchTerm = '',
 }) => {
-  const {
-    products,
-    portfolios,
-    productTypes,
-    duplicateProduct,
-    bulkApproveProducts,
-    currentUser,
-    showToast,
-    industryPacks
-  } = useApp();
-  const [selectedPack, setSelectedPack] = useState('');
+  const { products, portfolios, productTypes, duplicateProduct, bulkApproveProducts, currentUser, showToast, industryPacks, activePrincipal } = useApp();
+
+  const [view, setViewRaw] = useState<'table' | 'grid'>(readView);
+  const setView = (v: 'table' | 'grid') => { setViewRaw(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* per-viewer convenience only */ } };
   const [lifecycle, setLifecycle] = useState<{ product: Product; action: LifecycleAction } | null>(null);
   const [packsOpen, setPacksOpen] = useState(false);
-
-  const [configureOpen, setConfigureOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Filter state
+  // Filters
   const [localSearch, setLocalSearch] = useState('');
-  const [selectedPortfolio, setSelectedPortfolio] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [selectedProductType, setSelectedProductType] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('');
-  const [selectedTracking, setSelectedTracking] = useState('');
-  const [selectedSource, setSelectedSource] = useState('');
-  const [savedView, setSavedView] = useState('all');
+  const [status, setStatus] = useState<'' | Status>('');
+  const [attention, setAttention] = useState(false);
+  const [pack, setPack] = useState('');
+  const [portfolio, setPortfolio] = useState('');
+  const [category, setCategory] = useState('');
+  const [productType, setProductType] = useState('');
+  const [tracking, setTracking] = useState('');
+  const [source, setSource] = useState('');
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'updated', dir: 'desc' });
 
   // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  // Active filter count calculation
-  const effectiveSearch = searchTerm || localSearch;
+  const effectiveSearch = (searchTerm || localSearch).trim();
+  const enabledPacks = industryPacks.filter((pk) => pk.enabled);
+  const portfolioOf = (p: Product) => portfolios.find((x) => x.id === p.portfolioId);
+  const categoryOf = (p: Product) => portfolioOf(p)?.categories.find((c) => c.id === p.categoryId);
+  const typeOf = (p: Product) => productTypes.find((t) => t.id === p.productTypeId);
+  const categories = useMemo(() => (portfolio ? portfolios.find((p) => p.id === portfolio)?.categories ?? [] : portfolios.flatMap((p) => p.categories)), [portfolio, portfolios]);
+  const usedTypes = useMemo(() => productTypes.filter((t) => products.some((p) => p.productTypeId === t.id)), [productTypes, products]);
+  const sources = useMemo(() => [...new Set(products.map((p) => p.sourceSystem).filter(Boolean))].sort(), [products]);
 
-  // Categories under selected portfolio
-  const availableCategories = useMemo(() => {
-    if (!selectedPortfolio) {
-      return portfolios.flatMap((p) => p.categories);
-    }
-    const port = portfolios.find((p) => p.id === selectedPortfolio);
-    return port ? port.categories : [];
-  }, [selectedPortfolio, portfolios]);
-
-  // Saved View toggles
-  const applySavedView = (view: string) => {
-    setSavedView(view);
-    if (view === 'all') {
-      setSelectedStatus('');
-      setSelectedProductType('');
-      setSelectedTracking('');
-    } else if (view === 'active-implants') {
-      setSelectedStatus('Active');
-      setSelectedProductType('type-implant');
-      setSelectedTracking('');
-    } else if (view === 'pending') {
-      setSelectedStatus('Pending Approval');
-      setSelectedProductType('');
-      setSelectedTracking('');
-    } else if (view === 'drafts') {
-      setSelectedStatus('Draft');
-      setSelectedProductType('');
-      setSelectedTracking('');
-    } else if (view === 'batch-serial') {
-      setSelectedStatus('');
-      setSelectedProductType('');
-      setSelectedTracking('Batch + Serial');
-    }
-  };
-
-  const handleClearFilters = () => {
-    setLocalSearch('');
-    setSelectedPack('');
-    setSelectedPortfolio('');
-    setSelectedCategory('');
-    setSelectedProductType('');
-    setSelectedStatus('');
-    setSelectedTracking('');
-    setSelectedSource('');
-    setSavedView('all');
-  };
-
-  // Filter products
-  const filteredProducts = useMemo(() => {
+  // Everything except the status tab, so the tab counts reflect the other filters.
+  const baseFiltered = useMemo(() => {
+    const q = effectiveSearch.toLowerCase();
     return products.filter((p) => {
-      // Search
-      if (effectiveSearch) {
-        const query = effectiveSearch.toLowerCase();
-        const matchesName = p.name.toLowerCase().includes(query);
-        const matchesCode = p.code.toLowerCase().includes(query);
-        const matchesBrand = (p.brand || '').toLowerCase().includes(query);
-        const matchesSku = p.variants.some((v) => v.sku.toLowerCase().includes(query) || v.gtin.toLowerCase().includes(query));
-        if (!matchesName && !matchesCode && !matchesBrand && !matchesSku) return false;
-      }
-
-      // Industry
-      if (selectedPack && packOf(p.productTypeId, productTypes) !== selectedPack) return false;
-
-      // Portfolio
-      if (selectedPortfolio && p.portfolioId !== selectedPortfolio) return false;
-
-      // Category
-      if (selectedCategory && p.categoryId !== selectedCategory) return false;
-
-      // Product Type
-      if (selectedProductType && p.productTypeId !== selectedProductType) return false;
-
-      // Status
-      if (selectedStatus && p.lifecycleStatus !== selectedStatus) return false;
-
-      // Tracking
-      if (selectedTracking && p.trackingMode !== selectedTracking) return false;
-
-      // Source
-      if (selectedSource && !p.sourceSystem.toLowerCase().includes(selectedSource.toLowerCase())) return false;
-
+      if (q && ![p.name, p.code, p.brand, p.hsnCode, ...p.variants.flatMap((v) => [v.sku, v.gtin])].some((s) => (s || '').toLowerCase().includes(q))) return false;
+      if (pack && packOf(p.productTypeId, productTypes) !== pack) return false;
+      if (portfolio && p.portfolioId !== portfolio) return false;
+      if (category && p.categoryId !== category) return false;
+      if (productType && p.productTypeId !== productType) return false;
+      if (tracking && p.trackingMode !== tracking) return false;
+      if (source && p.sourceSystem !== source) return false;
+      if (attention && !needsAttention(p)) return false;
       return true;
     });
-  }, [
-    products,
-    effectiveSearch,
-    selectedPack,
-    productTypes,
-    selectedPortfolio,
-    selectedCategory,
-    selectedProductType,
-    selectedStatus,
-    selectedTracking,
-    selectedSource
-  ]);
+  }, [products, effectiveSearch, pack, productTypes, portfolio, category, productType, tracking, source, attention]);
 
-  // Metrics calculation
-  const totalCount = products.length;
-  const activeCount = products.filter((p) => p.lifecycleStatus === 'Active').length;
-  const draftCount = products.filter((p) => p.lifecycleStatus === 'Draft').length;
-  const pendingCount = products.filter((p) => p.lifecycleStatus === 'Pending Approval').length;
-  const variantCount = products.filter((p) => p.hasVariants).length;
-  const incompleteCount = products.filter((p) => !p.code || !p.hsnCode).length;
+  const filtered = useMemo(() => {
+    const rows = status ? baseFiltered.filter((p) => p.lifecycleStatus === status) : baseFiltered;
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      if (sort.key === 'name') return a.name.localeCompare(b.name) * dir;
+      if (sort.key === 'mrp') return ((a.pricingReference?.mrp ?? 0) - (b.pricingReference?.mrp ?? 0)) * dir;
+      return (a.updatedAt || '').localeCompare(b.updatedAt || '') * dir;
+    });
+  }, [baseFiltered, status, sort]);
 
-  // Pagination slice
-  const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
+  useEffect(() => { setPage(1); }, [effectiveSearch, status, pack, portfolio, category, productType, tracking, source, attention, pageSize]);
+
+  const counts = {
+    total: products.length,
+    active: products.filter((p) => p.lifecycleStatus === 'Active').length,
+    pending: products.filter((p) => p.lifecycleStatus === 'Pending Approval').length,
+    draft: products.filter((p) => p.lifecycleStatus === 'Draft').length,
+    tracked: products.filter((p) => p.trackingMode !== 'None').length,
+    attention: products.filter(needsAttention).length,
+  };
+  const usedPortfolios = new Set(products.map((p) => p.portfolioId)).size;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const current = Math.min(page, totalPages);
+  const rows = filtered.slice((current - 1) * pageSize, current * pageSize);
+  const allOnPage = rows.length > 0 && rows.every((p) => selectedIds.has(p.id));
+
+  const toggle = (id: string) => setSelectedIds((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const togglePage = () => setSelectedIds((s) => { const n = new Set(s); rows.forEach((p) => (allOnPage ? n.delete(p.id) : n.add(p.id))); return n; });
+
+  const clearAll = () => {
+    setLocalSearch(''); setStatus(''); setAttention(false); setPack(''); setPortfolio(''); setCategory(''); setProductType(''); setTracking(''); setSource('');
+  };
+  const chips: { label: string; clear: () => void }[] = [
+    ...(effectiveSearch && !searchTerm ? [{ label: `“${effectiveSearch}”`, clear: () => setLocalSearch('') }] : []),
+    ...(attention ? [{ label: 'Needs attention', clear: () => setAttention(false) }] : []),
+    ...(pack ? [{ label: enabledPacks.find((x) => x.id === pack)?.name ?? pack, clear: () => setPack('') }] : []),
+    ...(portfolio ? [{ label: portfolios.find((x) => x.id === portfolio)?.name ?? 'Portfolio', clear: () => { setPortfolio(''); setCategory(''); } }] : []),
+    ...(category ? [{ label: categories.find((x) => x.id === category)?.name ?? 'Category', clear: () => setCategory('') }] : []),
+    ...(productType ? [{ label: productTypes.find((x) => x.id === productType)?.name ?? 'Type', clear: () => setProductType('') }] : []),
+    ...(tracking ? [{ label: `Tracking: ${tracking}`, clear: () => setTracking('') }] : []),
+    ...(source ? [{ label: `Source: ${source}`, clear: () => setSource('') }] : []),
+  ];
+  const filterCount = chips.length - (effectiveSearch && !searchTerm ? 1 : 0);
+
+  const sortBy = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'name' ? 'asc' : 'desc' }));
+  const SortHead: React.FC<{ k: SortKey; children: React.ReactNode; className?: string }> = ({ k, children, className }) => (
+    <th className={`sortable ${className ?? ''}`} onClick={() => sortBy(k)} aria-sort={sort.key === k ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <span className="pl-sort">{children}{sort.key === k && (sort.dir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}</span>
+    </th>
   );
 
-  // Checkbox Selection
-  const allCurrentSelected =
-    paginatedProducts.length > 0 &&
-    paginatedProducts.every((p) => selectedIds.has(p.id));
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      const next = new Set(selectedIds);
-      paginatedProducts.forEach((p) => next.add(p.id));
-      setSelectedIds(next);
-    } else {
-      const next = new Set(selectedIds);
-      paginatedProducts.forEach((p) => next.delete(p.id));
-      setSelectedIds(next);
-    }
-  };
-
-  const handleToggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
-  };
-
-  const handleBulkStatus = () => {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    const r = bulkApproveProducts(ids);
+  const bulkApprove = () => {
+    const r = bulkApproveProducts([...selectedIds]);
     showToast(r.message, r.ok ? 'success' : 'warning');
     (r.errors ?? []).slice(0, 3).forEach((e) => showToast(e, 'warning'));
     setSelectedIds(new Set());
   };
 
-  const handleBulkExport = () => {
-    showToast(`Exporting ${selectedIds.size} selected products...`, 'info');
-    onOpenExport();
+  const Avatar: React.FC<{ p: Product }> = ({ p }) => { const [bg, fg] = swatch(p.categoryId || p.portfolioId || p.id); return <span className="pl-avatar" style={{ background: bg, color: fg }} aria-hidden>{initials(p.name)}</span>; };
+  const StatusPill: React.FC<{ p: Product }> = ({ p }) => (
+    <span className={`pl-pill ${PILL[p.lifecycleStatus]}`} title={p.approvalStatus === 'Rejected' ? 'Last submission was rejected' : undefined}>
+      <span className="pl-dot" />{p.lifecycleStatus === 'Pending Approval' ? 'Pending approval' : p.lifecycleStatus}{p.approvalStatus === 'Rejected' && ' · rejected'}
+    </span>
+  );
+  const moreItems = (p: Product, close: () => void) => {
+    const acts = availableActions(p, currentUser.permissions).filter((a) => a !== 'reject');
+    return (
+      <>
+        <MenuItem icon={<ScanBarcode size={15} />} title="Print barcode label" onClick={() => { close(); onPrintLabel(p); }} />
+        <MenuItem icon={<Copy size={15} />} title="Duplicate" onClick={() => { close(); duplicateProduct(p.id); }} />
+        {acts.length > 0 && <div className="pl-menu-sep" />}
+        {acts.map((a) => (
+          <MenuItem key={a} danger={a === 'retire'} icon={a === 'submit' ? <Send size={15} /> : a === 'approve' ? <ShieldCheck size={15} /> : <Archive size={15} />}
+            title={a === 'submit' ? 'Submit for approval' : a === 'approve' ? 'Review & approve' : 'Retire product'} onClick={() => { close(); setLifecycle({ product: p, action: a }); }} />
+        ))}
+      </>
+    );
   };
 
+  const configItems: [string, React.ReactNode, string, string][] = [
+    ['productTypes', <Tag size={15} />, 'Product types', 'Behaviour, stockability and tracking'],
+    ['productTemplates', <FileSpreadsheet size={15} />, 'Product templates', 'Reusable structures and attribute bindings'],
+    ['attributes', <SlidersHorizontal size={15} />, 'Attributes & sets', 'Data types, units and variant dimensions'],
+    ['trackingRules', <Fingerprint size={15} />, 'Tracking rules', 'Traceability policies and mandates'],
+    ['validationRules', <ShieldCheck size={15} />, 'Validation rules', 'Checks before approval'],
+  ];
+  const classItems: [string, React.ReactNode, string][] = [
+    ['portfolios', <FolderTree size={15} />, 'Portfolios'], ['categories', <Tags size={15} />, 'Categories'], ['subCategories', <Tags size={15} />, 'Sub-categories'],
+  ];
+
   return (
-    <div id="view-product-list" className="vf-view active">
-      {/* Page Header */}
-      <div className="vf-page-header">
-        <div className="vf-page-title-group">
-          <h1 className="vf-page-title">
-            <span>Product Master</span>
-            <span className="vf-badge vf-badge-approved" style={{ fontSize: '11px' }}>
-              Universal Registry
-            </span>
-          </h1>
-          <p className="vf-page-desc">
-            Manage product definitions, classifications, variants, identifiers, and product lifecycle across universal deployment scenarios.
-          </p>
+    <div id="view-product-list" className="vf-view active pl">
+      {/* Header */}
+      <div className="pl-head">
+        <div>
+          <h1 className="pl-title">Products</h1>
+          <p className="pl-sub">{counts.total} products across {usedPortfolios} portfolio{usedPortfolios === 1 ? '' : 's'} · {activePrincipal?.name}</p>
         </div>
-
-        <div className="vf-header-actions" style={{ position: 'relative' }}>
-          {/* Configure Dropdown */}
-          <div className="vf-dropdown-wrap">
-            <button
-              type="button"
-              className="vf-btn vf-btn-secondary"
-              onClick={() => setConfigureOpen(!configureOpen)}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
-              </svg>
-              <span>Configure ▾</span>
-            </button>
-
-            {configureOpen && (
-              <div
-                className="vf-dropdown-menu active"
-                style={{ position: 'absolute', right: 0, top: '100%', zIndex: 100 }}
-                onClick={() => setConfigureOpen(false)}
-              >
-                <div className="vf-dropdown-header">Product Configuration</div>
-                <div className="vf-dropdown-item" onClick={() => { setPacksOpen(true); setConfigureOpen(false); }}>
-                  <span className="vf-dropdown-icon">🧩</span>
-                  <div>
-                    <div className="vf-dropdown-title">Industry Packs</div>
-                    <div className="vf-dropdown-desc">Medical, Agri, Automotive, Electronics, General</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('productTypes')}>
-                  <span className="vf-dropdown-icon">🏷️</span>
-                  <div>
-                    <div className="vf-dropdown-title">Product Types</div>
-                    <div className="vf-dropdown-desc">Define behavior, stockability & tracking</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('productTemplates')}>
-                  <span className="vf-dropdown-icon">📐</span>
-                  <div>
-                    <div className="vf-dropdown-title">Product Templates</div>
-                    <div className="vf-dropdown-desc">Reusable structures & attribute bindings</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('attributes')}>
-                  <span className="vf-dropdown-icon">⚙️</span>
-                  <div>
-                    <div className="vf-dropdown-title">Attributes & Attribute Sets</div>
-                    <div className="vf-dropdown-desc">Data types, units, rules & variant dimensions</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('trackingRules')}>
-                  <span className="vf-dropdown-icon">🔍</span>
-                  <div>
-                    <div className="vf-dropdown-title">Tracking Rules</div>
-                    <div className="vf-dropdown-desc">Traceability policies & regulatory mandates</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('validationRules')}>
-                  <span className="vf-dropdown-icon">🛡️</span>
-                  <div>
-                    <div className="vf-dropdown-title">Validation Rules</div>
-                    <div className="vf-dropdown-desc">Pre-approval checks & mandatory field criteria</div>
-                  </div>
-                </div>
-
-                <div className="vf-dropdown-header">Classification Management</div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('portfolios')}>
-                  <span className="vf-dropdown-icon">📁</span>
-                  <div>
-                    <div className="vf-dropdown-title">Portfolios</div>
-                    <div className="vf-dropdown-desc">Commercial business groupings & divisions</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('categories')}>
-                  <span className="vf-dropdown-icon">🗂️</span>
-                  <div>
-                    <div className="vf-dropdown-title">Categories</div>
-                    <div className="vf-dropdown-desc">Product taxonomic classifications</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('subCategories')}>
-                  <span className="vf-dropdown-icon">📑</span>
-                  <div>
-                    <div className="vf-dropdown-title">Sub-Categories</div>
-                    <div className="vf-dropdown-desc">Specialized clinical & technical segments</div>
-                  </div>
-                </div>
-
-                <div className="vf-dropdown-header">Additional Settings</div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('uomPackaging')}>
-                  <span className="vf-dropdown-icon">📦</span>
-                  <div>
-                    <div className="vf-dropdown-title">UOM & Packaging Defaults</div>
-                    <div className="vf-dropdown-desc">Conversion factors & packaging hierarchies</div>
-                  </div>
-                </div>
-                <div className="vf-dropdown-item" onClick={() => onOpenConfigStudio('inventoryPolicy')}>
-                  <span className="vf-dropdown-icon">📊</span>
-                  <div>
-                    <div className="vf-dropdown-title">Inventory Policy Defaults</div>
-                    <div className="vf-dropdown-desc">Safety thresholds, reorder points & lead times</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Import Button */}
-          <button type="button" className="vf-btn vf-btn-secondary" onClick={onOpenImport}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <span>Import</span>
-          </button>
-
-          {/* Export Button */}
-          <button type="button" className="vf-btn vf-btn-secondary" onClick={onOpenExport}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            <span>Export</span>
-          </button>
-
-          {/* Create Product Button */}
-          <button type="button" className="vf-btn vf-btn-primary vf-btn-lg" onClick={onCreateProduct}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            <span>Create Product</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Metrics Grid */}
-      <div className="vf-metric-grid">
-        <div className="vf-metric-card accent">
-          <div className="vf-metric-label">
-            <span>Total Products</span>
-            <span style={{ fontSize: '14px' }}>📦</span>
-          </div>
-          <div className="vf-metric-value">{totalCount}</div>
-          <div className="vf-metric-meta">Across 5 commercial portfolios</div>
-        </div>
-
-        <div className="vf-metric-card success">
-          <div className="vf-metric-label">
-            <span>Active Products</span>
-            <span style={{ fontSize: '14px' }}>✓</span>
-          </div>
-          <div className="vf-metric-value">{activeCount}</div>
-          <div className="vf-metric-meta">Available for pricing & orders</div>
-        </div>
-
-        <div className="vf-metric-card warning">
-          <div className="vf-metric-label">
-            <span>Draft Records</span>
-            <span style={{ fontSize: '14px' }}>📝</span>
-          </div>
-          <div className="vf-metric-value">{draftCount}</div>
-          <div className="vf-metric-meta">Work in progress definitions</div>
-        </div>
-
-        <div className="vf-metric-card purple">
-          <div className="vf-metric-label">
-            <span>Pending Approval</span>
-            <span style={{ fontSize: '14px' }}>⏳</span>
-          </div>
-          <div className="vf-metric-value">{pendingCount}</div>
-          <div className="vf-metric-meta">Regulatory sign-off required</div>
-        </div>
-
-        <div className="vf-metric-card accent">
-          <div className="vf-metric-label">
-            <span>With Variants</span>
-            <span style={{ fontSize: '14px' }}>🔀</span>
-          </div>
-          <div className="vf-metric-value">{variantCount}</div>
-          <div className="vf-metric-meta">Configurable SKU matrices</div>
-        </div>
-
-        <div className="vf-metric-card">
-          <div className="vf-metric-label">
-            <span>Incomplete Records</span>
-            <span style={{ fontSize: '14px' }}>⚠️</span>
-          </div>
-          <div className="vf-metric-value">{incompleteCount}</div>
-          <div className="vf-metric-meta">Missing UDI or Tax code</div>
-        </div>
-      </div>
-
-      {/* Filter Card */}
-      <div className="vf-filter-card">
-        {/* Top Row: Saved Views */}
-        <div className="vf-filter-row-top">
-          <div className="vf-saved-views">
-            <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--vf-slate-500)', textTransform: 'uppercase', marginRight: '4px' }}>
-              Views:
-            </span>
-            <button
-              className={`vf-view-pill ${savedView === 'all' ? 'active' : ''}`}
-              onClick={() => applySavedView('all')}
-            >
-              All Products
-            </button>
-            <button
-              className={`vf-view-pill ${savedView === 'active-implants' ? 'active' : ''}`}
-              onClick={() => applySavedView('active-implants')}
-            >
-              Active Implants
-            </button>
-            <button
-              className={`vf-view-pill ${savedView === 'pending' ? 'active' : ''}`}
-              onClick={() => applySavedView('pending')}
-            >
-              Pending Approval
-            </button>
-            <button
-              className={`vf-view-pill ${savedView === 'drafts' ? 'active' : ''}`}
-              onClick={() => applySavedView('drafts')}
-            >
-              Drafts
-            </button>
-            <button
-              className={`vf-view-pill ${savedView === 'batch-serial' ? 'active' : ''}`}
-              onClick={() => applySavedView('batch-serial')}
-            >
-              Batch + Serial Tracked
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button className="vf-btn vf-btn-sm vf-btn-secondary" onClick={handleClearFilters}>
-              Clear Filters
-            </button>
-          </div>
-        </div>
-
-        {/* Industry chips */}
-        <div className="vf-saved-views" style={{ padding: '0 0 10px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--vf-slate-500)', textTransform: 'uppercase', marginRight: '4px' }}>Industry:</span>
-          {[{ id: '', name: 'All industries' }, ...industryPacks.filter((pk) => pk.enabled)].map((pk) => {
-            const n = pk.id ? products.filter((p) => packOf(p.productTypeId, productTypes) === pk.id).length : products.length;
-            return (
-              <button key={pk.id || 'all'} className={`vf-view-pill ${selectedPack === pk.id ? 'active' : ''}`} onClick={() => { setSelectedPack(pk.id); setCurrentPage(1); }}>
-                {pk.name} <span style={{ opacity: 0.6 }}>({n})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Filter Grid */}
-        <div className="vf-filter-grid">
-          <div className="vf-form-group" style={{ gridColumn: 'span 2' }}>
-            <label className="vf-label">Search Products & Identifiers</label>
-            <input
-              type="text"
-              className="vf-input"
-              value={localSearch}
-              onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="Name, code, SKU, GTIN, or brand..."
-            />
-          </div>
-
-          <div className="vf-form-group">
-            <label className="vf-label">Portfolio</label>
-            <select
-              className="vf-select"
-              value={selectedPortfolio}
-              onChange={(e) => {
-                setSelectedPortfolio(e.target.value);
-                setSelectedCategory('');
-              }}
-            >
-              <option value="">All Portfolios</option>
-              {portfolios.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="vf-form-group">
-            <label className="vf-label">Category</label>
-            <select
-              className="vf-select"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
-              <option value="">All Categories</option>
-              {availableCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="vf-form-group">
-            <label className="vf-label">Product Type</label>
-            <select
-              className="vf-select"
-              value={selectedProductType}
-              onChange={(e) => setSelectedProductType(e.target.value)}
-            >
-              <option value="">All Product Types</option>
-              {productTypes.map((pt) => (
-                <option key={pt.id} value={pt.id}>
-                  {pt.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="vf-form-group">
-            <label className="vf-label">Status</label>
-            <select
-              className="vf-select"
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-            >
-              <option value="">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="Draft">Draft</option>
-              <option value="Pending Approval">Pending Approval</option>
-              <option value="Retired">Retired</option>
-            </select>
-          </div>
-
-          <div className="vf-form-group">
-            <label className="vf-label">Tracking Mode</label>
-            <select
-              className="vf-select"
-              value={selectedTracking}
-              onChange={(e) => setSelectedTracking(e.target.value)}
-            >
-              <option value="">All Tracking</option>
-              <option value="Batch + Serial">Batch + Serial</option>
-              <option value="Batch / Lot">Batch / Lot</option>
-              <option value="Serial">Serial Only</option>
-              <option value="None">None</option>
-            </select>
-          </div>
-
-          <div className="vf-form-group">
-            <label className="vf-label">Source System</label>
-            <select
-              className="vf-select"
-              value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-            >
-              <option value="">All Sources</option>
-              <option value="SAP">SAP S/4HANA</option>
-              <option value="Oracle">Oracle Fusion</option>
-              <option value="CSV">Excel / CSV Import</option>
-              <option value="VinFlux">VinFlux Direct</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Active Filter Tags */}
-        <div className="vf-active-tags-row">
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {selectedPortfolio || selectedCategory || selectedProductType || selectedStatus || selectedTracking || selectedSource || effectiveSearch ? (
+        <div className="pl-actions">
+          <Menu wide trigger={(t, open) => <button type="button" className={`pl-btn${open ? ' on' : ''}`} onClick={t} aria-haspopup="menu"><Settings2 size={15} />Configure<ChevronDown size={14} /></button>}>
+            {(close) => (
               <>
-                <span style={{ fontSize: '11.5px', color: 'var(--vf-slate-500)', fontWeight: 600 }}>Active Filters:</span>
-                {effectiveSearch && <span className="vf-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>Search: "{effectiveSearch}"</span>}
-                {selectedPortfolio && <span className="vf-badge" style={{ background: '#e0e7ff', color: '#3730a3' }}>Portfolio Filtered</span>}
-                {selectedCategory && <span className="vf-badge" style={{ background: '#f5f3ff', color: '#6d28d9' }}>Category Filtered</span>}
-                {selectedProductType && <span className="vf-badge" style={{ background: '#f0fdf4', color: '#166534' }}>Type Filtered</span>}
-                {selectedStatus && <span className="vf-badge" style={{ background: '#fef3c7', color: '#92400e' }}>Status: {selectedStatus}</span>}
-                {selectedTracking && <span className="vf-badge" style={{ background: '#f1f5f9', color: '#334155' }}>Tracking: {selectedTracking}</span>}
-                {selectedSource && <span className="vf-badge" style={{ background: '#fdf2f8', color: '#9d174d' }}>Source: {selectedSource}</span>}
+                <div className="pl-menu-label">Product configuration</div>
+                <MenuItem icon={<Puzzle size={15} />} title="Industry packs" desc={enabledPacks.map((x) => x.name).join(', ')} onClick={() => { close(); setPacksOpen(true); }} />
+                {configItems.map(([id, icon, title, desc]) => <MenuItem key={id} icon={icon} title={title} desc={desc} onClick={() => { close(); onOpenConfigStudio(id); }} />)}
+                <div className="pl-menu-label">Classification</div>
+                {classItems.map(([id, icon, title]) => <MenuItem key={id} icon={icon} title={title} onClick={() => { close(); onOpenConfigStudio(id); }} />)}
+                <div className="pl-menu-label">Defaults</div>
+                <MenuItem icon={<Ruler size={15} />} title="UOM & packaging" onClick={() => { close(); onOpenConfigStudio('uomPackaging'); }} />
+                <MenuItem icon={<Gauge size={15} />} title="Inventory policy" onClick={() => { close(); onOpenConfigStudio('inventoryPolicy'); }} />
               </>
-            ) : (
-              <span style={{ color: 'var(--vf-slate-400)', fontSize: '11.5px' }}>
-                No custom filters active (showing default set)
-              </span>
             )}
-          </div>
-          <span style={{ fontSize: '11px', color: 'var(--vf-slate-500)' }}>Universal Multi-Facet Filter Engine</span>
+          </Menu>
+          <Menu trigger={(t, open) => <button type="button" className={`pl-btn${open ? ' on' : ''}`} onClick={t} aria-haspopup="menu"><Upload size={15} />Import<ChevronDown size={14} /></button>}>
+            {(close) => (
+              <>
+                <MenuItem icon={<FileSpreadsheet size={15} />} title="From Excel / CSV" desc="Upload a file with the product template" onClick={() => { close(); onOpenImport(); }} />
+                {onOpenErpImport && <MenuItem icon={<CloudDownload size={15} />} title="From ERP" desc="Read items from a live connection (Zoho, SAP, Odoo…)" onClick={() => { close(); onOpenErpImport(); }} />}
+              </>
+            )}
+          </Menu>
+          <button type="button" className="pl-btn" onClick={onOpenExport}><Download size={15} />Export</button>
+          <button type="button" className="pl-btn pl-btn-primary" onClick={onCreateProduct}><Plus size={16} />New product</button>
         </div>
       </div>
 
-      {/* Bulk Action Bar */}
-      {selectedIds.size > 0 && (
-        <div className="vf-bulk-bar" style={{ display: 'flex' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontWeight: 700, color: '#60a5fa' }}>{selectedIds.size} product(s) selected</span>
-            <span style={{ color: '#64748b' }}>|</span>
-            <button
-              type="button"
-              className="vf-btn vf-btn-sm vf-btn-secondary"
-              onClick={handleBulkStatus}
-              style={{ background: '#334155', color: '#fff', borderColor: '#475569' }}
-              disabled={!currentUser.permissions.canApproveProducts}
-              title={currentUser.permissions.canApproveProducts ? 'Approve selected products that are pending approval' : 'You do not have approval rights'}
-            >
-              Approve selected
-            </button>
-            <button
-              type="button"
-              className="vf-btn vf-btn-sm vf-btn-secondary"
-              onClick={handleBulkExport}
-              style={{ background: '#334155', color: '#fff', borderColor: '#475569' }}
-            >
-              Export Selected
-            </button>
+      {/* Stats */}
+      <div className="pl-stats">
+        <button type="button" className={`pl-stat${!status && !attention ? ' on' : ''}`} onClick={() => { setStatus(''); setAttention(false); }}>
+          <span className="pl-stat-label"><Package size={13} />Total products</span><span className="pl-stat-value">{counts.total}</span>
+          <span className="pl-stat-meta">{products.filter((p) => p.hasVariants).length} with variants</span>
+        </button>
+        <button type="button" className={`pl-stat${status === 'Active' ? ' on' : ''}`} onClick={() => setStatus('Active')}>
+          <span className="pl-stat-label"><span className="pl-dot" style={{ background: 'var(--vf-success)' }} />Active</span><span className="pl-stat-value">{counts.active}</span>
+          <span className="pl-stat-meta">Ready for pricing and orders</span>
+        </button>
+        <button type="button" className={`pl-stat${status === 'Pending Approval' ? ' on' : ''}`} onClick={() => setStatus('Pending Approval')}>
+          <span className="pl-stat-label"><span className="pl-dot" style={{ background: 'var(--vf-warning)' }} />Pending approval</span><span className="pl-stat-value">{counts.pending}</span>
+          <span className="pl-stat-meta">{counts.draft} in draft</span>
+        </button>
+        <div className="pl-stat" style={{ cursor: 'default' }}>
+          <span className="pl-stat-label"><Layers size={13} />Batch / serial tracked</span><span className="pl-stat-value">{counts.tracked}</span>
+          <span className="pl-stat-meta">{counts.total ? Math.round((counts.tracked / counts.total) * 100) : 0}% of the catalogue</span>
+        </div>
+        <button type="button" className={`pl-stat${attention ? ' on' : ''}`} onClick={() => setAttention((a) => !a)}>
+          <span className="pl-stat-label"><AlertTriangle size={13} color={counts.attention ? 'var(--vf-warning)' : undefined} />Needs attention</span><span className="pl-stat-value">{counts.attention}</span>
+          <span className="pl-stat-meta">Missing code, HSN or GST rate</span>
+        </button>
+      </div>
+
+      {/* Panel */}
+      <div className="pl-panel">
+        <div className="pl-toolbar">
+          <div className="pl-tabs" role="tablist" aria-label="Status">
+            {STATUS_TABS.map((t) => (
+              <button key={t.id || 'all'} type="button" role="tab" aria-selected={status === t.id} className={`pl-tab${status === t.id ? ' on' : ''}`} onClick={() => setStatus(t.id)}>
+                {t.label}<em>{t.id ? baseFiltered.filter((p) => p.lifecycleStatus === t.id).length : baseFiltered.length}</em>
+              </button>
+            ))}
           </div>
-          <button
-            type="button"
-            className="vf-btn vf-btn-sm"
-            onClick={() => setSelectedIds(new Set())}
-            style={{ background: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer' }}
-          >
-            Clear Selection
+          <span className="pl-spacer" />
+          {!searchTerm && (
+            <div className="pl-search">
+              <Search size={15} />
+              <input value={localSearch} onChange={(e) => setLocalSearch(e.target.value)} placeholder="Search name, code, SKU, GTIN, HSN…" aria-label="Search products" />
+              {localSearch && <button type="button" className="pl-icon-btn" aria-label="Clear search" onClick={() => setLocalSearch('')}><X size={14} /></button>}
+            </div>
+          )}
+          <button type="button" className={`pl-btn${filtersOpen || filterCount ? ' on' : ''}`} onClick={() => setFiltersOpen((o) => !o)} aria-expanded={filtersOpen}>
+            <Filter size={15} />Filters{filterCount > 0 && <span className="pl-count">{filterCount}</span>}
           </button>
-        </div>
-      )}
-
-      {/* Products Table */}
-      <div className="vf-table-container">
-        <div className="vf-table-responsive">
-          <table className="vf-table">
-            <thead>
-              <tr>
-                <th style={{ width: '38px', textAlign: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={allCurrentSelected}
-                    onChange={handleSelectAll}
-                    title="Select all on this page"
-                  />
-                </th>
-                <th>Product Definition & Code</th>
-                <th>SKU / Variants</th>
-                <th>Portfolio & Category</th>
-                <th>Product Type</th>
-                <th>Principal & Source</th>
-                <th>Tracking</th>
-                <th>Status</th>
-                <th>Approval</th>
-                <th>Updated</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedProducts.map((p) => {
-                const portfolio = portfolios.find((port) => port.id === p.portfolioId);
-                const category = portfolio?.categories.find((c) => c.id === p.categoryId);
-                const pType = productTypes.find((t) => t.id === p.productTypeId);
-
-                return (
-                  <tr key={p.id}>
-                    <td style={{ textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(p.id)}
-                        onChange={() => handleToggleSelect(p.id)}
-                      />
-                    </td>
-                    <td>
-                      <div
-                        style={{ fontWeight: 700, color: 'var(--vf-primary)', cursor: 'pointer', lineHeight: 1.3 }}
-                        onClick={() => onViewProduct(p.id)}
-                        title="View Product Detail"
-                      >
-                        {p.name}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--vf-slate-500)', marginTop: '2px' }}>
-                        Code: <code>{p.code}</code> · HSN: <strong>{p.hsnCode}</strong>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="vf-badge" style={{ background: '#eff6ff', color: '#1d4ed8' }}>
-                        {p.hasVariants ? `${p.variants.length} Variants` : '1 Base SKU'}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, fontSize: '12.5px' }}>{portfolio?.name || 'General'}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--vf-slate-500)' }}>{category?.name || '--'}</div>
-                    </td>
-                    <td>
-                      <span className="vf-badge vf-badge-type">{pType?.name || 'Implant'}</span>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '12px', fontWeight: 600 }}>Biorad Medisys</div>
-                      <div style={{ fontSize: '11px', color: 'var(--vf-slate-500)' }}>{p.sourceSystem}</div>
-                    </td>
-                    <td>
-                      <span className="vf-badge vf-badge-tracking">{p.trackingMode}</span>
-                    </td>
-                    <td>
-                      <span
-                        className={`vf-badge ${
-                          p.lifecycleStatus === 'Active'
-                            ? 'vf-badge-approved'
-                            : p.lifecycleStatus === 'Draft'
-                            ? 'vf-badge-warning'
-                            : p.lifecycleStatus === 'Retired'
-                            ? 'vf-badge-danger'
-                            : 'vf-badge-pending'
-                        }`}
-                      >
-                        {p.lifecycleStatus}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={`vf-badge ${
-                          p.approvalStatus === 'Approved' ? 'vf-badge-approved' : 'vf-badge-pending'
-                        }`}
-                      >
-                        {p.approvalStatus}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '11.5px', color: 'var(--vf-slate-600)' }}>{p.updatedAt}</div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--vf-slate-400)' }}>{p.updatedBy}</div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '4px' }}>
-                        <button
-                          type="button"
-                          className="vf-btn vf-btn-sm vf-btn-secondary"
-                          onClick={() => onViewProduct(p.id)}
-                          title="View Detail"
-                        >
-                          View
-                        </button>
-                        <button
-                          type="button"
-                          className="vf-btn vf-btn-sm vf-btn-secondary"
-                          onClick={() => onEditProduct(p.id)}
-                          title="Edit Product"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="vf-btn vf-btn-sm vf-btn-secondary"
-                          onClick={() => onPrintLabel(p)}
-                          title="Print Barcode Label"
-                        >
-                          🏷️
-                        </button>
-                        <button
-                          type="button"
-                          className="vf-btn vf-btn-sm vf-btn-secondary"
-                          onClick={() => duplicateProduct(p.id)}
-                          title="Duplicate Product"
-                        >
-                          📋
-                        </button>
-                        {availableActions(p, currentUser.permissions).filter((a) => a !== 'reject').map((a) => (
-                          <button
-                            key={a}
-                            type="button"
-                            className="vf-btn vf-btn-sm"
-                            style={a === 'retire'
-                              ? { background: 'transparent', border: '1px solid #fecaca', color: '#dc2626' }
-                              : { background: 'transparent', border: '1px solid #c7d2fe', color: '#4338ca' }}
-                            onClick={() => setLifecycle({ product: p, action: a })}
-                            title={a === 'submit' ? 'Submit for approval' : a === 'approve' ? 'Approve' : 'Retire product'}
-                          >
-                            {a === 'submit' ? 'Submit' : a === 'approve' ? 'Review' : 'Retire'}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="pl-seg" role="group" aria-label="View">
+            <button type="button" className={view === 'table' ? 'on' : ''} onClick={() => setView('table')} aria-label="Table view" aria-pressed={view === 'table'} title="Table view"><List size={16} /></button>
+            <button type="button" className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')} aria-label="Grid view" aria-pressed={view === 'grid'} title="Grid view"><LayoutGrid size={16} /></button>
+          </div>
         </div>
 
-        {/* Empty State */}
-        {filteredProducts.length === 0 && (
-          <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-            <div style={{ fontSize: '36px', marginBottom: '8px' }}>🔍</div>
-            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vf-slate-800)', marginBottom: '4px' }}>
-              No matching product records
-            </h3>
-            <p style={{ fontSize: '13px', color: 'var(--vf-slate-500)', maxWidth: '420px', margin: '0 auto 16px' }}>
-              Try adjusting your search criteria, clearing active filters, or changing saved views.
-            </p>
-            <button className="vf-btn vf-btn-secondary" onClick={handleClearFilters}>
-              Clear All Filters
-            </button>
+        {filtersOpen && (
+          <div className="pl-filters">
+            {enabledPacks.length > 1 && (
+              <label>Industry
+                <select value={pack} onChange={(e) => setPack(e.target.value)}>
+                  <option value="">All industries</option>
+                  {enabledPacks.map((pk) => <option key={pk.id} value={pk.id}>{pk.name} ({products.filter((p) => packOf(p.productTypeId, productTypes) === pk.id).length})</option>)}
+                </select>
+              </label>
+            )}
+            <label>Portfolio
+              <select value={portfolio} onChange={(e) => { setPortfolio(e.target.value); setCategory(''); }}>
+                <option value="">All portfolios</option>
+                {portfolios.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label>Category
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">All categories</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label>Product type
+              <select value={productType} onChange={(e) => setProductType(e.target.value)}>
+                <option value="">All types</option>
+                {usedTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
+            <label>Tracking
+              <select value={tracking} onChange={(e) => setTracking(e.target.value)}>
+                <option value="">Any tracking</option>
+                <option value="Batch + Serial">Batch + serial</option>
+                <option value="Batch / Lot">Batch / lot</option>
+                <option value="Serial">Serial only</option>
+                <option value="None">Not tracked</option>
+              </select>
+            </label>
+            <label>Source
+              <select value={source} onChange={(e) => setSource(e.target.value)}>
+                <option value="">Any source</option>
+                {sources.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
           </div>
         )}
 
-        {/* Pagination Footer */}
-        <div className="vf-pagination">
-          <div>
-            Showing {filteredProducts.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{' '}
-            {Math.min(currentPage * pageSize, filteredProducts.length)} of {filteredProducts.length} products
+        {chips.length > 0 && (
+          <div className="pl-chips">
+            {chips.map((c) => <span key={c.label} className="pl-chip">{c.label}<button type="button" aria-label={`Remove ${c.label}`} onClick={c.clear}><X size={12} /></button></span>)}
+            <button type="button" className="pl-link" onClick={clearAll}>Clear all</button>
           </div>
-          <div className="vf-pagination-controls">
-            <button
-              className="vf-btn vf-btn-sm vf-btn-secondary"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((c) => Math.max(1, c - 1))}
-            >
-              &larr; Previous
-            </button>
-            <span style={{ fontSize: '12px', padding: '0 8px', alignSelf: 'center' }}>
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              className="vf-btn vf-btn-sm vf-btn-secondary"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((c) => Math.min(totalPages, c + 1))}
-            >
-              Next &rarr;
-            </button>
+        )}
+
+        {filtered.length === 0 ? (
+          <div className="pl-empty">
+            <span className="pl-empty-icon"><PackageSearch size={24} /></span>
+            {products.length === 0 ? (
+              <>
+                <h3>No products yet</h3>
+                <p>Create your first product, or bring your catalogue in from Excel or your ERP.</p>
+                <div className="pl-actions" style={{ justifyContent: 'center' }}>
+                  <button type="button" className="pl-btn" onClick={onOpenImport}><FileSpreadsheet size={15} />Import file</button>
+                  <button type="button" className="pl-btn pl-btn-primary" onClick={onCreateProduct}><Plus size={16} />New product</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>No products match</h3>
+                <p>Try a different search, or clear the filters.</p>
+                <button type="button" className="pl-btn" onClick={clearAll}>Clear all filters</button>
+              </>
+            )}
           </div>
-        </div>
+        ) : view === 'table' ? (
+          <div className="pl-table-wrap">
+            <table className="pl-table">
+              <thead>
+                <tr>
+                  <th className="chk"><input type="checkbox" className="pl-check" checked={allOnPage} onChange={togglePage} aria-label="Select all on this page" /></th>
+                  <SortHead k="name" className="pl-prod-col">Product</SortHead>
+                  <th className="pl-col-sm">Type &amp; category</th>
+                  <th className="pl-col-hide">Tracking</th>
+                  <SortHead k="mrp" className="num">MRP</SortHead>
+                  <th>Status</th>
+                  <SortHead k="updated" className="pl-col-hide">Updated</SortHead>
+                  <th className="act"><span className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((p) => {
+                  const cat = categoryOf(p);
+                  return (
+                    <tr key={p.id} className={selectedIds.has(p.id) ? 'sel' : ''} onClick={() => onViewProduct(p.id)}>
+                      <td className="chk" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="pl-check" checked={selectedIds.has(p.id)} onChange={() => toggle(p.id)} aria-label={`Select ${p.name}`} /></td>
+                      <td>
+                        <div className="pl-prod">
+                          <Avatar p={p} />
+                          <div style={{ minWidth: 0 }}>
+                            <div className="pl-name">{p.name}</div>
+                            <div className="pl-meta">
+                              <span className="pl-mono">{p.code || <span className="pl-muted">no code</span>}</span>
+                              <span className="pl-muted">·</span>
+                              <span>HSN {p.hsnCode || <span style={{ color: 'var(--vf-warning)' }}>missing</span>}</span>
+                              {p.hasVariants && <span className="pl-tag">{p.variants.length} variants</span>}
+                              {needsAttention(p) && <span title="Missing code, HSN or GST rate"><AlertTriangle size={13} color="var(--vf-warning)" /></span>}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="pl-type pl-col-sm" title={`${typeOf(p)?.name ?? ''} — ${portfolioOf(p)?.name ?? 'General'}${cat ? ` › ${cat.name}` : ''}`}>
+                        <div className="pl-cell-main">{typeOf(p)?.name ?? '—'}</div>
+                        <div className="pl-cell-sub">{portfolioOf(p)?.name ?? 'General'}{cat ? ` › ${cat.name}` : ''}</div>
+                      </td>
+                      <td className="pl-col-hide"><span className="pl-track">{TRACK_ICON[p.trackingMode]}{p.trackingMode === 'None' ? 'Not tracked' : p.trackingMode}</span></td>
+                      <td className="num">{fmtINR(p.pricingReference?.mrp ?? 0) || <span className="pl-muted">—</span>}</td>
+                      <td><StatusPill p={p} /></td>
+                      <td className="pl-col-hide">
+                        <div style={{ whiteSpace: 'nowrap' }}>{fmtDate(p.updatedAt)}</div>
+                        <div className="pl-cell-sub" style={{ whiteSpace: 'nowrap' }}>{p.sourceSystem || p.updatedBy}</div>
+                      </td>
+                      <td className="act" onClick={(e) => e.stopPropagation()}>
+                        <span className="pl-row-actions" style={{ display: 'inline-flex', gap: 2 }}>
+                          <button type="button" className="pl-icon-btn" aria-label={`View ${p.name}`} title="View" onClick={() => onViewProduct(p.id)}><Eye size={16} /></button>
+                          <button type="button" className="pl-icon-btn" aria-label={`Edit ${p.name}`} title="Edit" onClick={() => onEditProduct(p.id)}><Pencil size={15} /></button>
+                          <RowMenu>{(close) => moreItems(p, close)}</RowMenu>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pl-grid">
+            {rows.map((p) => {
+              const [bg] = swatch(p.categoryId || p.portfolioId || p.id);
+              return (
+                <div key={p.id} className={`pl-card${selectedIds.has(p.id) ? ' sel' : ''}`} onClick={() => onViewProduct(p.id)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') onViewProduct(p.id); }}>
+                  <div className="pl-card-top" style={{ background: `linear-gradient(135deg, ${bg}, #fff)` }}>
+                    <input type="checkbox" className="pl-check" checked={selectedIds.has(p.id)} onChange={() => toggle(p.id)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${p.name}`} />
+                    <Avatar p={p} />
+                    <StatusPill p={p} />
+                  </div>
+                  <div className="pl-card-body">
+                    <div className="pl-name">{p.name}</div>
+                    <div className="pl-meta"><span className="pl-mono">{p.code}</span>{needsAttention(p) && <AlertTriangle size={13} color="var(--vf-warning)" />}</div>
+                    <dl className="pl-card-facts">
+                      <dt>Type</dt><dd>{typeOf(p)?.name ?? '—'}</dd>
+                      <dt>Category</dt><dd>{categoryOf(p)?.name ?? '—'}</dd>
+                      <dt>Tracking</dt><dd>{p.trackingMode === 'None' ? 'Not tracked' : p.trackingMode}</dd>
+                      <dt>MRP</dt><dd>{fmtINR(p.pricingReference?.mrp ?? 0) || '—'}</dd>
+                    </dl>
+                  </div>
+                  <div className="pl-card-foot" onClick={(e) => e.stopPropagation()}>
+                    <span>{p.hasVariants ? `${p.variants.length} variants · ` : ''}Updated {fmtDate(p.updatedAt)}</span>
+                    <span style={{ display: 'inline-flex' }}>
+                      <button type="button" className="pl-icon-btn" aria-label={`Edit ${p.name}`} title="Edit" onClick={() => onEditProduct(p.id)}><Pencil size={15} /></button>
+                      <RowMenu>{(close) => moreItems(p, close)}</RowMenu>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {filtered.length > 0 && (
+          <div className="pl-foot">
+            <span>{(current - 1) * pageSize + 1}–{Math.min(current * pageSize, filtered.length)} of {filtered.length}</span>
+            <div className="pl-pager">
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} aria-label="Rows per page">
+                {[10, 25, 50].map((n) => <option key={n} value={n}>{n} per page</option>)}
+              </select>
+              <button type="button" className="pl-icon-btn" disabled={current <= 1} onClick={() => setPage(current - 1)} aria-label="Previous page"><ChevronLeft size={16} /></button>
+              <span style={{ padding: '0 6px' }}>Page {current} of {totalPages}</span>
+              <button type="button" className="pl-icon-btn" disabled={current >= totalPages} onClick={() => setPage(current + 1)} aria-label="Next page"><ChevronRight size={16} /></button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="pl-bulk" role="toolbar" aria-label="Bulk actions">
+          <strong>{selectedIds.size} selected</strong>
+          <button type="button" className="pl-btn" onClick={bulkApprove} disabled={!currentUser.permissions.canApproveProducts}
+            title={currentUser.permissions.canApproveProducts ? 'Approve the selected products that are pending approval' : 'Your role cannot approve products'}><Check size={15} />Approve</button>
+          <button type="button" className="pl-btn" onClick={() => { showToast(`Exporting ${selectedIds.size} selected products…`, 'info'); onOpenExport(); }}><Download size={15} />Export</button>
+          <button type="button" className="pl-icon-btn" aria-label="Clear selection" onClick={() => setSelectedIds(new Set())}><X size={16} /></button>
+        </div>
+      )}
+
       {packsOpen && <IndustryPacksDrawer onClose={() => setPacksOpen(false)} />}
       {lifecycle && <LifecycleDialog product={lifecycle.product} action={lifecycle.action} onClose={() => setLifecycle(null)} />}
     </div>

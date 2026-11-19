@@ -9,7 +9,7 @@ import { useApp } from '../../context/AppContext.tsx';
 /** Settings → Modules: switch modules on/off for the active principal. */
 const ModulesPage: React.FC = () => {
   const { enabled, setEnabled } = usePlatform();
-  const { currentUser, activePrincipal, showToast } = useApp();
+  const { currentUser, activePrincipal, showToast, workspace } = useApp();
   const canEdit = !!currentUser.permissions.canConfigurePlatform;
   const name = (id: string) => MODULES.find((m) => m.id === id)?.name ?? id;
   const card = (m: ModuleManifest) => {
@@ -44,7 +44,7 @@ const ModulesPage: React.FC = () => {
       <PageHeader title="Modules" description={<>Plug-and-play modules for <strong>{activePrincipal.name}</strong>. Switching a module off hides its screens; modules that depend on it must be switched off first.</>} />
       {!canEdit && <div className="g2-small" style={{ color: '#b45309', marginBottom: 12 }}>Only users with configuration rights can switch modules.</div>}
       <Card title={<span className="g2-row"><Blocks size={16} /> Available</span>}>
-        <div className="g2-grid g2-grid-2">{MODULES.filter((m) => m.status === 'available').map(card)}</div>
+        <div className="g2-grid g2-grid-2">{MODULES.filter((m) => m.status === 'available' && (!m.industries?.length || m.industries.includes(workspace))).map(card)}</div>
       </Card>
       <div style={{ height: 16 }} />
       <Card title="Roadmap" subtitle="Each module plugs into the same core (users, products, partners, approvals, audit, events).">

@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { GtmV2Layout } from '../layouts/GtmV2Layout';
 import { LoadingState } from '../components/ui';
+import { currentWorkspace } from '../../../platform/workspace';
 
 /* Each module is code-split so GTM V2 does not bloat the legacy bundle. */
 const DashboardPage = lazy(() => import('../pages/dashboard/DashboardPage'));
@@ -39,7 +40,7 @@ export const GtmV2Routes: React.FC = () => (
       <Route path="partners/onboard" element={<Page><OnboardingWizardPage /></Page>} />
       <Route path="partners/onboard/:partnerId" element={<Page><OnboardingWizardPage /></Page>} />
       <Route path="partner-network" element={<Page><PartnerNetworkPage /></Page>} />
-      <Route path="hospital-coverage" element={<Page><HospitalCoveragePage /></Page>} />
+      <Route path="hospital-coverage" element={currentWorkspace() === 'medical-devices' ? <Page><HospitalCoveragePage /></Page> : <Navigate to="/gtm-v2/partner-network" replace />} />
       <Route path="commercial-terms" element={<Page><CommercialTermsPage /></Page>} />
       <Route path="approvals" element={<Page><ApprovalsPage /></Page>} />
       <Route path="reports" element={<Page><ReportsPage /></Page>} />
