@@ -197,6 +197,7 @@ export const Sidebar: React.FC = () => {
         <div className="vf-nav-section">
           <div className="vf-nav-heading">Platform</div>
           {nav('/data-sources', 'Data Sources', ic('M12 2C6.5 2 2 3.8 2 6v12c0 2.2 4.5 4 10 4s10-1.8 10-4V6c0-2.2-4.5-4-10-4zM2 6c0 2.2 4.5 4 10 4s10-1.8 10-4M2 12c0 2.2 4.5 4 10 4s10-1.8 10-4'))}
+          {nav('/pending', 'What\'s pending', ic('M9 11l3 3L22 4M3 12h2M3 6h2M3 18h2M8 6h4M8 18h10'))}
           {nav('/audit', 'Audit Log', ic('M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M8 13h8M8 17h5'))}
           {nav('/data-import', 'Data Import', ic('M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3'))}
           {nav('/integrations', 'Integration Hub', ic('M8 7h8M8 12h8M8 17h5M4 4h16v16H4z'))}

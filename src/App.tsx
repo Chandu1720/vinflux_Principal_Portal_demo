@@ -34,6 +34,7 @@ const CollectionsPage = lazy(() => import('./modules/collections/CollectionsPage
 const ProcurementPage = lazy(() => import('./modules/procurement/ProcurementPage'));
 const ImportsPage = lazy(() => import('./modules/imports/ImportsPage'));
 const QcPage = lazy(() => import('./modules/qc/QcPage'));
+const PendingPage = lazy(() => import('./platform/pages/PendingPage'));
 const ConsentPage = lazy(() => import('./modules/secondary/ConsentPage'));
 const NetworkPage = lazy(() => import('./modules/network/NetworkPage'));
 const AssemblyPage = lazy(() => import('./modules/assembly/AssemblyPage'));
@@ -134,6 +135,7 @@ const AppContent: React.FC = () => {
             <Route path="/audit" element={<AuditLogPage />} />
             <Route path="/data-sources" element={<DataSourcesPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/pending" element={<PendingPage />} />
             <Route path="/replenishment" element={guard(<ReplenishmentPage />)} />
             <Route path="/performance" element={guard(<PerformancePage />)} />
             <Route path="/tenders" element={guard(<TendersPage />)} />
