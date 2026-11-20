@@ -1679,3 +1679,6 @@ textarea.vf-input {
 .vf-chip { display: inline-flex; align-items: center; gap: 4px; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
 .vf-chip button { border: 0; background: none; cursor: pointer; color: inherit; padding: 0; font-size: 13px; line-height: 1; }
 .vf-chip-input input { border: 0; outline: none; flex: 1; min-width: 90px; font-size: 13px; }
+
+/* Phones: the topbar search does not fit next to the page title. */
+@media (max-width: 760px) { .vf-search-input-wrap { display: none; } }

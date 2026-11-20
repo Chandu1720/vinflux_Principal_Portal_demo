@@ -15,7 +15,7 @@ import { balances, subscribeStock } from '../inventory/stockStore';
 import type { LocType } from '../inventory/stockStore';
 import {
   CUSTOMER_TYPES, FRESH_DAYS, ROUTE_LABEL, SCOPE_LABEL, SHARING_LABEL, accept, consentOf, ensurePlatformDemo, requestConsent, respondConsent, setOnPlatform, syncFromPlatform, withdrawConsent, coverage, downstream, ensureSecondaryDemo, getReport, itemMapOf, mapCode, partnerBoard, prevPeriod,
-  reject, reports as allReports, saveSecSettings, saveSetup, secSettings, sellThrough, setupOf, submitReport, subscribeSecondary, thisPeriod,
+  logAccess, reject, reports as allReports, saveSecSettings, saveSetup, secSettings, sellThrough, setupOf, submitReport, subscribeSecondary, thisPeriod,
 } from './secondaryStore';
 import type { Cadence, ConsentScopes, ConsentStatus, RawLine, ReportStatus, Route, Sharing } from './secondaryStore';
 
@@ -187,7 +187,8 @@ const SetupModal: React.FC<{ partner: Partner; onClose: () => void; onRecord: ()
   const s = setupOf(partner.id);
   const set = (p: Partial<typeof s>) => { saveSetup({ ...s, ...p }); showToast('Saved.', 'success'); };
   const c = consentOf(partner.id);
-  const [ask, setAsk] = useState<ConsentScopes>({ stock: true, sales: true, cases: false });
+  useEffect(() => { if (s.onPlatform) logAccess(partner.id, 'Viewed stock, sales and reports', currentUser.name); }, [partner.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [ask, setAsk] = useState<ConsentScopes>({ catalogue: true, orders: true, stock: true, sales: true, claims: true, cases: false });
   const [demo, setDemo] = useState<{ scopes: ConsentScopes; identity: Sharing; until: string } | null>(null);
   const tell = (r: { ok: boolean; message: string }) => showToast(r.message, r.ok ? 'success' : 'warning');
   const me = { id: partner.id, name: partner.name, locType: locOf(partner) };
@@ -333,7 +334,7 @@ const SecondaryPage: React.FC = () => {
                   <td className="g2-small">{r.setup.onPlatform ? <>{ROUTE_LABEL.vinflux}<div className="g2-cell-sub"><Badge tone={CONSENT_TONE[consentOf(r.partnerId).status]}>Consent: {consentOf(r.partnerId).status}</Badge></div></> : <>{ROUTE_LABEL[r.setup.route]}{r.setup.system ? ` · ${r.setup.system}` : ''}<div className="g2-cell-sub">every {r.setup.cadence === 'nightly' ? 'night' : r.setup.cadence === 'weekly' ? 'week' : 'month'}</div></>}</td>
                   <td>{r.setup.onPlatform && consentOf(r.partnerId).status !== 'Granted' ? <Badge tone="slate">No data without consent</Badge> : r.setup.onPlatform && r.last ? <><Badge tone={r.fresh ? 'green' : 'red'} dot>{r.fresh ? 'Live' : 'Stale'}</Badge> <span className="g2-small">synced {r.age === 0 ? 'today' : `${r.age}d ago`}</span></> : r.estimated ? <Badge tone="slate">Estimated</Badge> : r.last ? <><Badge tone={r.fresh ? 'green' : 'red'} dot>{r.fresh ? 'Fresh' : 'Stale'}</Badge> <span className="g2-small">{r.last.period} · {r.age}d ago</span></> : <Badge tone="red">No data</Badge>}</td>
                   <td style={{ textAlign: 'right' }}>{r.stockUnits} units<div className="g2-cell-sub">{inr(r.stockValue)}{r.estimated ? ' (est.)' : ''}</div></td>
-                  <td>{r.reconOk === null ? '—' : r.reconOk ? <Badge tone="green">Reconciles</Badge> : <Badge tone="red">Mismatch</Badge>}{r.pending > 0 && <> <Badge tone="amber">{r.pending} to review</Badge></>}</td>
+                  <td>{r.reconOk === null ? '—' : r.reconOk ? <Badge tone="green">Reconciles</Badge> : <Badge tone="red">Mismatch</Badge>}{r.pending > 0 && <> <Badge tone="amber">{r.pending} to review</Badge></>}{(() => { const n = new Set(reps.filter((x) => x.partnerId === r.partnerId && x.status === 'Needs review').flatMap((x) => x.unmapped.map((u) => u.code))).size; return n ? <div className="g2-cell-sub" style={{ color: '#b45309' }}>Partial sync — {n} item code{n === 1 ? '' : 's'} to map</div> : null; })()}</td>
                   <td className="g2-small">{r.setup.onPlatform ? <span className="g2-muted">automatic</span> : <a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRecording({ preset: r.partnerId }); }}>Record</a>}</td>
                 </tr>
               ))}

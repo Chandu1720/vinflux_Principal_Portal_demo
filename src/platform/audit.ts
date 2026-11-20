@@ -15,7 +15,7 @@ import { proposals } from '../modules/replenishment/replenishmentStore';
 import { inspections } from '../modules/qc/qcStore';
 import { priceLists } from '../modules/pricing/pricingStore';
 import { shipments as impShipments } from '../modules/imports/importsStore';
-import { reports as secReports } from '../modules/secondary/secondaryStore';
+import { allReports as secReports } from '../modules/secondary/secondaryStore';
 
 export interface AuditRow { id: string; at: string; by: string; module: string; record: string; action: string; note: string; source: string }
 type Hist = { at: string; by: string; action: string; note?: string }[];

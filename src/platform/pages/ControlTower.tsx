@@ -5,9 +5,9 @@
  */
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertOctagon, ArrowRight, Boxes, Building2, ChevronRight, Clock, Factory, Hospital, IndianRupee, LayoutGrid, Radar, Ship, ShieldCheck, Truck, Users, Warehouse } from 'lucide-react';
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Badge, Card, PageHeader, Segmented, Tabs } from '../ui';
+import { ArrowRight, BarChart3, Boxes, Building2, ChevronRight, ClipboardList, Clock, Factory, FileWarning, Gavel, Hospital, IndianRupee, Megaphone, PackageX, Radar, Receipt, Ship, ShieldCheck, Truck, TrendingUp, Users, Warehouse } from 'lucide-react';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Badge, Button, Card, KpiCard, PageHeader, Segmented } from '../ui';
 import type { BadgeTone } from '../../modules/gtm-v2/types';
 import { usePlatform } from '../PlatformContext';
 import { useSubscribe } from '../useStore';
@@ -24,6 +24,9 @@ import { recalls, subscribeRecall } from '../../modules/recall/recallStore';
 import { ageing, subscribeCollections } from '../../modules/collections/collectionsStore';
 import { inspections as qcInspections, subscribeQc } from '../../modules/qc/qcStore';
 import { suggest, subscribeReplenishment } from '../../modules/replenishment/replenishmentStore';
+import type { PartnerSuggest } from '../../modules/replenishment/replenishmentStore';
+import type { SecondaryReport as SecReport } from '../../modules/secondary/secondaryStore';
+import { claimSchemes, spentOf } from '../../modules/claims/claimsStore';
 import { landed, missingDocs, shipments as impShipments, subscribeImports } from '../../modules/imports/importsStore';
 import { grns as procGrns, poValue, pos as procPos, subscribeProcurement } from '../../modules/procurement/procurementStore';
 import { agreementFor, reminders as tenderReminders, stateOf as agreementState, subscribeTenders } from '../../modules/tenders/tendersStore';
@@ -47,6 +50,34 @@ type Health = 'ok' | 'warn' | 'bad' | 'off';
 const HEALTH: Record<Health, { c: string; bg: string; b: string }> = {
   ok: { c: '#047857', bg: '#ecfdf5', b: '#a7f3d0' }, warn: { c: '#b45309', bg: '#fffbeb', b: '#fde68a' }, bad: { c: '#b91c1c', bg: '#fef2f2', b: '#fecaca' }, off: { c: '#6b7280', bg: '#f9fafb', b: '#e5e7eb' },
 };
+
+/** Indian states → sales zone (for the primary-vs-secondary-by-zone chart). */
+const ZONES = ['North', 'West', 'South', 'East', 'Central', 'North-East', 'Other'];
+const ZONE: Record<string, string> = Object.fromEntries([
+  ...['Delhi', 'Haryana', 'Punjab', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jammu & Kashmir', 'Ladakh', 'Uttarakhand', 'Uttar Pradesh', 'Chandigarh', 'Rajasthan'].map((x) => [x, 'North']),
+  ...['Maharashtra', 'Gujarat', 'Goa', 'Dadra and Nagar Haveli and Daman and Diu'].map((x) => [x, 'West']),
+  ...['Telangana', 'Andhra Pradesh', 'Karnataka', 'Tamil Nadu', 'Kerala', 'Puducherry', 'Lakshadweep', 'Andaman and Nicobar Islands'].map((x) => [x, 'South']),
+  ...['West Bengal', 'Odisha', 'Bihar', 'Jharkhand'].map((x) => [x, 'East']),
+  ...['Madhya Pradesh', 'Chhattisgarh'].map((x) => [x, 'Central']),
+  ...['Assam', 'Meghalaya', 'Manipur', 'Mizoram', 'Nagaland', 'Tripura', 'Arunachal Pradesh', 'Sikkim'].map((x) => [x, 'North-East']),
+]);
+const CLAIM_SLA_DAYS = 7;
+const BRAND_COLORS = ['#3b82f6', '#8b5cf6', '#14b8a6', '#f59e0b', '#94a3b8'];
+type Tint = 'red' | 'amber' | 'purple' | 'blue' | 'teal' | 'green';
+const TINT: Record<Tint, { bg: string; c: string }> = {
+  red: { bg: '#fdecee', c: '#dc3545' }, amber: { bg: '#fff5e0', c: '#c77700' }, purple: { bg: '#f1ebfd', c: '#7c3aed' },
+  blue: { bg: '#eaf1ff', c: '#2563eb' }, teal: { bg: '#e3f6f3', c: '#0f8f7e' }, green: { bg: '#e7f7ee', c: '#15803d' },
+};
+interface TRow { main: string; sub?: string; pill?: string; tone?: BadgeTone; pct?: number; plain?: boolean; path?: string; lenses?: Lens[] }
+interface TCard { key: string; title: string; tint: Tint; icon: React.ReactNode; count: number; path: string; lenses: Lens[]; rows: TRow[] }
+/** Exceptions without a dedicated card are grouped into these. */
+const GROUPS: { key: string; title: string; tint: Tint; icon: React.ReactNode; keys: string[] }[] = [
+  { key: 'g-supply', title: 'Supply & quality', tint: 'teal', icon: <Factory size={16} />, keys: ['po-late', 'po-appr', 'prod-q', 'imp-docs', 'imp-port', 'qc-todo', 'qc-rel', 'qc-hold', 'erp-stale', 'ship-late', 'back', 'ret'] },
+  { key: 'g-comp', title: 'Compliance & documents', tint: 'red', icon: <FileWarning size={16} />, keys: ['recall', 'lic', 'irn', 'ewb'] },
+  { key: 'g-data', title: 'Channel data & claims', tint: 'purple', icon: <BarChart3 size={16} />, keys: ['sec-stale', 'sec-review', 'leak', 'loaner'] },
+  { key: 'g-inst', title: 'Tenders & contracts', tint: 'blue', icon: <Gavel size={16} />, keys: ['bids', 'renew', 'deposit', 'rc', 'routed'] },
+];
+const ddmmyyyy = (d: Date) => `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
 
 interface Money { key: string; label: string; value: number; units?: string; foot: string; path: string; tone: BadgeTone; lenses: Lens[] }
 interface Node { key: string; title: string; icon: React.ReactNode; health: Health; main: string; lines: { text: string; tone?: BadgeTone }[]; path: string }
@@ -136,14 +167,15 @@ const ControlTower: React.FC = () => {
     }
 
     /* ---------------- Demand side ---------------- */
-    let stockouts: { partnerId: string; name: string; product: string; cover: number | null; perMonth: number }[] = [];
+    let stockouts: { partnerId: string; name: string; productId: string; product: string; cover: number | null; perMonth: number }[] = [];
+    let sgAll: PartnerSuggest[] = [];
     const coverBy: Record<string, number | null> = {};
     if (enabled('replenishment') || enabled('secondary')) {
-      const sg = suggest(pid, channelPartners.map((p) => ({ id: p.id, name: p.name, partnerTypeId: p.partnerTypeId })), products);
+      const sg = suggest(pid, channelPartners.map((p) => ({ id: p.id, name: p.name, partnerTypeId: p.partnerTypeId })), products); sgAll = sg;
       sg.filter((s) => s.ok).forEach((s) => {
         const covers = s.rows.filter((r) => r.avgDaily > 0).map((r) => r.coverNow ?? 0);
         coverBy[s.partnerId] = covers.length ? Math.min(...covers) : null;
-        s.rows.filter((r) => r.avgDaily > 0 && (r.coverNow ?? 0) < Math.min(14, r.targetDays / 3)).forEach((r) => stockouts.push({ partnerId: s.partnerId, name: s.partnerName, product: r.name, cover: r.coverNow, perMonth: r.avgDaily * 30 * sellValue(r.productId) }));
+        s.rows.filter((r) => r.avgDaily > 0 && (r.coverNow ?? 0) < Math.min(14, r.targetDays / 3)).forEach((r) => stockouts.push({ partnerId: s.partnerId, name: s.partnerName, productId: r.productId, product: r.name, cover: r.coverNow, perMonth: r.avgDaily * 30 * sellValue(r.productId) }));
       });
       stockouts = stockouts.sort((a, b) => (a.cover ?? 0) - (b.cover ?? 0));
     }
@@ -268,50 +300,222 @@ const ControlTower: React.FC = () => {
     // Start from the first month that has any data (at least the last 3 months).
     const first = trend.findIndex((x) => x.primary || x.secondary);
     const trendShown = trend.slice(Math.max(0, Math.min(first === -1 ? 3 : first, 3)));
+
+    /* ---------------- Channel view: sell-out, zones, exception cards ---------------- */
+    const from30 = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const prod = (id: string) => products.find((p) => p.id === id);
+    const codeOf = (id: string) => prod(id)?.name || prod(id)?.code || id;
+    const partnerOf = (id: string) => partnersAll.find((p) => p.id === id);
+    const zoneOf = (id: string) => ZONE[partnerOf(id)?.address?.state ?? ''] ?? 'Other';
+    const latestRep = new Map<string, SecReport>();
+    if (enabled('secondary')) secReports(pid).filter((r) => r.status === 'Accepted').sort((a, b) => (a.submittedAt < b.submittedAt ? -1 : 1)).forEach((r) => latestRep.set(`${r.partnerId}|${r.period}`, r));
+    const sales30 = [...latestRep.values()].flatMap((r) => r.sales.map((x) => ({ ...x, partnerId: r.partnerId }))).filter((x) => x.date >= from30 && x.date <= t);
+    const sources = [...new Set([...latestRep.values()].map((r) => r.system).filter(Boolean))];
+    const brandTot = new Map<string, number>(); sales30.forEach((x) => { const b = prod(x.productId)?.brand || 'Other'; brandTot.set(b, (brandTot.get(b) ?? 0) + x.value); });
+    const topBrands = [...brandTot.entries()].sort((a, b) => b[1] - a[1]).map(([b]) => b);
+    const brands = topBrands.length > 4 ? [...topBrands.slice(0, 4), 'Other brands'] : topBrands;
+    const brandKey = (pidx: string) => { const b = prod(pidx)?.brand || 'Other'; return brands.includes(b) ? b : 'Other brands'; };
+    const days = Array.from({ length: 30 }, (_, i) => new Date(Date.now() - (29 - i) * 86400000).toISOString().slice(0, 10));
+    const byBrand = days.map((day) => { const row: Record<string, number | string> = { day: day.slice(5) }; brands.forEach((b) => { row[b] = 0; }); sales30.filter((x) => x.date === day).forEach((x) => { const k = brandKey(x.productId); row[k] = (row[k] as number) + x.value; }); return row; });
+    const months6 = Array.from({ length: 6 }, (_, i) => { const x = new Date(); x.setUTCDate(1); x.setUTCMonth(x.getUTCMonth() - (5 - i)); return x.toISOString().slice(0, 7); });
+    const salesAll = [...latestRep.values()].flatMap((r) => r.sales.map((x) => ({ ...x, partnerId: r.partnerId })));
+    const brandsM = (() => { const tot = new Map<string, number>(); salesAll.forEach((x) => { const b = prod(x.productId)?.brand || 'Other'; tot.set(b, (tot.get(b) ?? 0) + x.value); }); const tb = [...tot.entries()].sort((a, b) => b[1] - a[1]).map(([b]) => b); return tb.length > 4 ? [...tb.slice(0, 4), 'Other brands'] : tb; })();
+    const byBrandM = months6.map((m) => { const row: Record<string, number | string> = { day: m.slice(2).replace('-', '/') }; brandsM.forEach((b) => { row[b] = 0; }); salesAll.filter((x) => x.date.slice(0, 7) === m).forEach((x) => { const b = prod(x.productId)?.brand || 'Other'; const k2 = brandsM.includes(b) ? b : 'Other brands'; row[k2] = (row[k2] as number) + x.value; }); return row; });
+    const firstM = byBrandM.findIndex((r) => brandsM.some((b) => (r[b] as number) > 0)); const byBrandMS = byBrandM.slice(Math.max(0, Math.min(firstM === -1 ? 3 : firstM, 3)));
+    const dailySpread = new Set(sales30.map((x) => x.date)).size >= 10;
+    const zones = new Map<string, { zone: string; primary: number; secondary: number }>();
+    const zrow = (z: string) => zones.get(z) ?? zones.set(z, { zone: z, primary: 0, secondary: 0 }).get(z)!;
+    if (enabled('orders')) orders().filter((o) => o.principalId === pid && o.createdAt.slice(0, 10) >= from30 && !['Rejected', 'Cancelled'].includes(o.status)).forEach((o) => { zrow(zoneOf(o.partnerId)).primary += orderValue(o); });
+    sales30.forEach((x) => { zrow(zoneOf(x.partnerId)).secondary += x.value; });
+    const byZone = [...zones.values()].filter((z) => z.primary || z.secondary).sort((a, b) => ZONES.indexOf(a.zone) - ZONES.indexOf(b.zone)).map((z) => ({ ...z, primary: Math.round(z.primary), secondary: Math.round(z.secondary) }));
+
+    const chStock = bal.filter((b) => b.locType === 'CNF' || b.locType === 'PARTNER');
+    const locName = (id: string) => warehouses.find((w) => w.id === id)?.name ?? pName(id);
+    const excess = sgAll.flatMap((g) => g.rows.filter((r) => r.stock > 0 && (r.avgDaily > 0 ? (r.coverNow ?? 0) > Math.max(60, r.targetDays * 2) : true)).map((r) => ({ g, r, value: r.stock * unitValue(r.productId) })))
+      .sort((a, b) => (b.r.coverNow ?? 999) - (a.r.coverNow ?? 999) || b.value - a.value);
+    const chExpiry = chStock.filter((b) => b.expiryDate && b.expiryDate <= lim90).sort((a, b) => (a.expiryDate! < b.expiryDate! ? -1 : 1));
+    const schemes = enabled('claims') ? claimSchemes(pid).filter((x) => x.status === 'Active' && x.budget > 0).map((x) => { const spent = spentOf(x.id); return { x, spent, pct: Math.round((spent / x.budget) * 100) }; }) : [];
+    const age = (h: { at: string }[]) => (h.length ? Math.floor((Date.now() - Date.parse(h[0].at)) / 86400000) : 0);
+    const openClaims = enabled('claims') ? claims(pid).filter((c) => ['Under review', 'Approved', 'Partly approved'].includes(c.status)) : [];
+    const pastSla = openClaims.filter((c) => c.status === 'Under review' && age(c.history) > CLAIM_SLA_DAYS).sort((a, b) => age(b.history) - age(a.history));
+    const odRows = enabled('collections') ? ageing(pid).filter((r) => r.overdue > 0).sort((a, b) => b.overdue - a.overdue) : [];
+    const actOrders = enabled('orders') ? orders().filter((o) => o.principalId === pid && ['Awaiting approval', 'On hold', 'Awaiting partner'].includes(o.status)).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)) : [];
+    const schemeName = (id: string) => (enabled('claims') ? claimSchemes(pid).find((x) => x.id === id)?.name : '') ?? '';
+
+    const cards: TCard[] = [];
+    const card = (c: TCard) => { if (c.count > 0) cards.push(c); };
+    card({ key: 'stockout', title: 'Stock-out risk', tint: 'red', icon: <PackageX size={16} />, count: stockouts.length, path: enabled('replenishment') ? '/replenishment' : '/secondary', lenses: ['all', 'sales', 'channel'],
+      rows: stockouts.map((x) => ({ main: codeOf(x.productId), sub: x.name, pill: `${x.cover ?? 0} days`, tone: 'red' as BadgeTone })) });
+    card({ key: 'overdue', title: 'Overdue dues', tint: 'red', icon: <IndianRupee size={16} />, count: odRows.length, path: '/collections', lenses: ['all', 'finance', 'sales'],
+      rows: odRows.map((r) => ({ main: r.partnerName, sub: `${zoneOf(r.partnerId) === 'Other' ? '' : `${partnerOf(r.partnerId)?.address?.city ?? ''} · `}oldest ${r.oldestDays} days${r.buckets['90+'] ? ` · ${inr(r.buckets['90+'])} over 90` : ''}`, pill: inr(r.overdue), tone: 'red' as BadgeTone, plain: true })) });
+    card({ key: 'orders', title: 'Orders awaiting action', tint: 'blue', icon: <ClipboardList size={16} />, count: actOrders.length, path: '/orders', lenses: ['all', 'desk', 'sales', 'finance'],
+      rows: actOrders.map((o) => ({ main: o.code, sub: `${o.partnerName} · ${inr(orderValue(o))}`, pill: o.status === 'Awaiting approval' ? 'Pending approval' : o.status === 'Awaiting partner' ? 'Waiting for partner' : o.status, tone: (o.status === 'On hold' ? 'red' : 'amber') as BadgeTone })) });
+    card({ key: 'claims', title: 'Claims past SLA', tint: 'purple', icon: <Receipt size={16} />, count: pastSla.length, path: '/claims', lenses: ['all', 'finance', 'channel'],
+      rows: pastSla.map((c) => ({ main: `${c.no} · ${c.kind && c.kind !== 'Scheme' ? c.kind : (schemeName(c.schemeId) || 'Scheme').split(' — ')[0]}`, sub: `${c.partnerName} · ${inr(c.claimedAmount)}`, pill: `${age(c.history)}d old`, tone: 'red' as BadgeTone })) });
+    card({ key: 'schemes', title: 'Schemes near / over budget', tint: 'amber', icon: <Megaphone size={16} />, count: schemes.filter((x) => x.pct >= 80).length, path: '/claims?tab=schemes', lenses: ['all', 'finance', 'channel'],
+      rows: schemes.filter((x) => x.pct >= 80).sort((a, b) => b.pct - a.pct).map((x) => ({ main: x.x.name.split(' — ')[0], pct: x.pct, pill: `${x.pct}%`, tone: (x.pct >= 100 ? 'red' : 'amber') as BadgeTone })) });
+    card({ key: 'excess', title: 'Excess stock', tint: 'amber', icon: <Boxes size={16} />, count: excess.length, path: '/secondary', lenses: ['all', 'channel', 'sales'],
+      rows: excess.map((x) => ({ main: codeOf(x.r.productId), sub: `${x.g.partnerName} · ${inr(x.value)}`, pill: x.r.avgDaily > 0 ? `${x.r.coverNow} days` : 'No sales', tone: 'amber' as BadgeTone })) });
+    card({ key: 'expiry', title: 'Expiring in channel ≤ 90 days', tint: 'amber', icon: <Clock size={16} />, count: chExpiry.length, path: '/inventory?tab=expiry', lenses: ['all', 'channel', 'sales', 'quality'],
+      rows: chExpiry.map((b) => ({ main: codeOf(b.productId), sub: `${locName(b.warehouseId)} · ${b.qty} units · ${inr(b.qty * unitValue(b.productId))}`, pill: `${Math.max(0, Math.ceil((Date.parse(b.expiryDate!) - Date.now()) / 86400000))} d left`, tone: (b.expiryDate! < t ? 'red' : 'amber') as BadgeTone })) });
+    const COVERED = new Set(['stockout', 'ch-exp', 'hold', 'appr', 'part', 'o90']);
+    GROUPS.forEach((g) => {
+      const items = ex.filter((e) => g.keys.includes(e.key) && !COVERED.has(e.key));
+      const sevT: Record<Exception['sev'], BadgeTone> = { critical: 'red', high: 'amber', medium: 'slate' };
+      card({ key: g.key, title: g.title, tint: g.tint, icon: g.icon, count: items.reduce((a, e) => a + e.count, 0), path: items[0]?.path ?? '/', lenses: [...new Set(items.flatMap((e) => e.lenses))],
+        rows: items.map((e) => ({ main: e.text, sub: e.detail || e.owner, pill: `${e.count}${e.value ? ` · ${inr(e.value)}` : ''}`, tone: sevT[e.sev], path: e.path, lenses: e.lenses })) });
+    });
+    const sell30 = sales30.reduce((a, x) => a + x.value, 0);
+    const kpi = {
+      sell30, units30: sales30.reduce((a, x) => a + x.qty, 0), outlets30: new Set(sales30.map((x) => `${x.partnerId}|${x.customer}`)).size,
+      chVal: chStock.reduce((a, b) => a + b.qty * unitValue(b.productId), 0), positions: new Set(chStock.map((b) => `${b.warehouseId}|${b.productId}`)).size,
+      overdue: odRows.reduce((a, r) => a + r.overdue, 0), overdueN: odRows.length,
+      claimsVal: openClaims.reduce((a, c) => a + (c.status === 'Under review' ? c.claimedAmount : c.approvedAmount ?? 0), 0), claimsN: openClaims.length, pastSla: pastSla.length,
+      spend: schemes.reduce((a, x) => a + x.spent, 0), budget: schemes.reduce((a, x) => a + x.x.budget, 0),
+      ownVal: bal.filter((b) => b.locType === 'COMPANY' && b.status === 'Available').reduce((a, b) => a + b.qty * unitValue(b.productId), 0),
+      ownUnits: bal.filter((b) => b.locType === 'COMPANY' && b.status === 'Available').reduce((a, b) => a + b.qty, 0),
+      poVal: enabled('procurement') ? procPos(pid).filter((x) => ['Sent', 'Acknowledged', 'Part received', 'Approved'].includes(x.status)).reduce((a, x) => a + poValue(x), 0) : 0,
+      poN: enabled('procurement') ? procPos(pid).filter((x) => ['Sent', 'Acknowledged', 'Part received', 'Approved'].includes(x.status)).length : 0,
+      transitN: allShipments().filter((x) => x.order.principalId === pid && !x.shipment.deliveredAt).length,
+      qcVal: bal.filter((b) => b.locType === 'COMPANY' && b.status === 'Quarantine').reduce((a, b) => a + b.qty * unitValue(b.productId), 0),
+      qcUnits: bal.filter((b) => b.locType === 'COMPANY' && b.status === 'Quarantine').reduce((a, b) => a + b.qty, 0),
+      blocked: bal.filter((b) => b.locType === 'COMPANY' && b.status === 'Blocked').reduce((a, b) => a + b.qty, 0),
+      review: actOrders.filter((o) => o.status !== 'Awaiting partner').length, partners: channelPartners.length,
+    };
     const sevOrder = { critical: 0, high: 1, medium: 2 };
     ex.sort((a, b) => sevOrder[a.sev] - sevOrder[b.sev] || (b.value ?? 0) - (a.value ?? 0));
-    return { money, nodes, ex, watch, trend: trendShown, stockouts };
+    return { money, nodes, ex, watch, trend: trendShown, stockouts, byBrand: dailySpread ? byBrand : byBrandMS, brands: dailySpread ? brands : brandsM, daily: dailySpread, byZone, cards, kpi, sources };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, pid, partnersAll, products, warehouses]);
 
-  const money = d.money.filter((m) => m.lenses.includes(lens) || lens === 'all');
-  const exs = d.ex.filter((e) => lens === 'all' || e.lenses.includes(lens));
-  const atRisk = money.filter((m) => m.tone !== 'green').reduce((a, m) => a + m.value, 0);
-  const critical = exs.filter((e) => e.sev === 'critical').length;
-  const SEV: Record<Exception['sev'], { tone: BadgeTone; label: string }> = { critical: { tone: 'red', label: 'Critical' }, high: { tone: 'amber', label: 'High' }, medium: { tone: 'slate', label: 'Medium' } };
+  const k = d.kpi;
+  const KPIS: { key: string; label: string; value: string; foot: string; icon: React.ReactNode; color: string; bg: string; path: string; lenses: Lens[]; show: boolean }[] = [
+    { key: 'sell', label: 'Sales in channel (30d)', value: inr(k.sell30), foot: `Secondary sell-out · ${k.units30.toLocaleString('en-IN')} units · ${k.outlets30} outlets`, icon: <TrendingUp size={22} />, color: '#2563eb', bg: '#eaf1ff', path: '/secondary', lenses: ['all', 'sales', 'channel'], show: enabled('secondary') },
+    { key: 'stock', label: 'Channel stock value', value: inr(k.chVal), foot: `${k.positions} product-partner positions`, icon: <Boxes size={22} />, color: '#0f8f7e', bg: '#e3f6f3', path: '/inventory', lenses: ['all', 'channel', 'sales', 'supply'], show: enabled('secondary') || enabled('inventory') },
+    { key: 'od', label: 'Overdue dues', value: inr(k.overdue), foot: `${k.overdueN} partner${k.overdueN === 1 ? '' : 's'} overdue`, icon: <IndianRupee size={22} />, color: '#dc3545', bg: '#fdecee', path: '/collections', lenses: ['all', 'finance', 'sales'], show: enabled('collections') },
+    { key: 'claims', label: 'Open claims', value: inr(k.claimsVal), foot: `${k.claimsN} claim${k.claimsN === 1 ? '' : 's'} · ${k.pastSla} past SLA`, icon: <Receipt size={22} />, color: '#7c3aed', bg: '#f1ebfd', path: '/claims', lenses: ['all', 'finance', 'channel'], show: enabled('claims') },
+    { key: 'spend', label: 'Scheme spend', value: inr(k.spend), foot: `of ${inr(k.budget)} live budget`, icon: <Megaphone size={22} />, color: '#c77700', bg: '#fff5e0', path: '/claims?tab=schemes', lenses: ['all', 'channel', 'finance'], show: enabled('claims') },
+    { key: 'own', label: 'Stock in own warehouses', value: inr(k.ownVal), foot: `${k.ownUnits.toLocaleString('en-IN')} units available to sell`, icon: <Warehouse size={22} />, color: '#0f8f7e', bg: '#e3f6f3', path: '/inventory', lenses: ['supply', 'desk'], show: enabled('inventory') },
+    { key: 'po', label: 'On order from suppliers', value: inr(k.poVal), foot: `${k.poN} open purchase order${k.poN === 1 ? '' : 's'}`, icon: <Factory size={22} />, color: '#2563eb', bg: '#eaf1ff', path: '/procurement', lenses: ['supply', 'finance'], show: enabled('procurement') },
+    { key: 'qc', label: 'Waiting for QC', value: inr(k.qcVal), foot: `${k.qcUnits} units in Quarantine · ${k.blocked} blocked`, icon: <ShieldCheck size={22} />, color: '#c77700', bg: '#fff5e0', path: enabled('qc') ? '/qc' : '/inventory', lenses: ['supply', 'quality'], show: enabled('inventory') },
+    { key: 'transit', label: 'Shipments in transit', value: String(k.transitN), foot: 'Not yet delivered to partners', icon: <Truck size={22} />, color: '#7c3aed', bg: '#f1ebfd', path: enabled('logistics') ? '/logistics?tab=transit' : '/orders', lenses: ['supply', 'desk'], show: enabled('orders') },
+    ...d.money.filter((m) => !['overdue', 'claims', 'stockout', 'quarantine'].includes(m.key)).map((m) => ({ key: m.key, label: m.label, value: inr(m.value), foot: m.units ? `${m.units} · ${m.foot}` : m.foot, icon: <IndianRupee size={22} />, color: m.tone === 'red' ? '#dc3545' : m.tone === 'amber' ? '#c77700' : '#15803d', bg: m.tone === 'red' ? '#fdecee' : m.tone === 'amber' ? '#fff5e0' : '#e7f7ee', path: m.path, lenses: m.lenses.filter((l) => l !== 'all'), show: true })),
+  ];
+  const kpis = KPIS.filter((x) => x.show && (x.lenses.includes(lens))).slice(0, 5);
+  const cards = d.cards.filter((c) => lens === 'all' || c.lenses.includes(lens)).map((c) => ({ ...c, rows: c.rows.filter((r) => !r.lenses || lens === 'all' || r.lenses.includes(lens)) })).filter((c) => c.rows.length);
+  const fmtAxis = (v: number) => (v >= 10000000 ? `₹${(v / 10000000).toFixed(1)} Cr` : v >= 100000 ? `₹${(v / 100000).toFixed(1)} L` : v >= 1000 ? `₹${Math.round(v / 1000)}k` : `₹${v}`);
+  const hasDaily = d.byBrand.some((r) => d.brands.some((b) => (r[b] as number) > 0));
+  const brandTitle = d.daily ? 'Secondary sell-out by brand — last 30 days' : 'Secondary sell-out by brand — by month';
 
   return (
     <div className="g2 g2-embed">
-      <PageHeader title="Control tower" description={<>{activePrincipal.name} — the whole chain from supplier to hospital, on one screen. Every number opens the records behind it.</>}
-        actions={<Tabs active={view} onChange={(v) => setView(v as 'tower' | 'modules')} tabs={[{ id: 'tower', label: 'Control tower', icon: <Radar size={14} /> }, { id: 'modules', label: 'By module', icon: <LayoutGrid size={14} /> }]} />} />
+      <PageHeader title="Control tower"
+        description={<>Live view of your channel across {k.partners} partner{k.partners === 1 ? '' : 's'}. Updated {ddmmyyyy(new Date())} from {[...new Set(['VinFlux', ...d.sources])].join(', ').replace(/, ([^,]*)$/, ' and $1')} feeds.</>}
+        actions={<>
+          {enabled('performance') && <Button onClick={() => navigate('/performance')}>Scorecards</Button>}
+          {enabled('orders') && <Button variant="primary" onClick={() => navigate('/approvals')}>Review orders ({k.review})</Button>}
+        </>} />
+      <div className="g2-row ct-lens" style={{ gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <span className="g2-small g2-muted">View as</span>
+        <Segmented options={LENSES.map((l) => ({ id: l.id, label: l.label }))} value={lens} onChange={(v) => setLens(v as Lens)} />
+        <span className="g2-spacer" />
+        <Segmented options={[{ id: 'tower', label: 'Control tower' }, { id: 'modules', label: 'By module' }]} value={view} onChange={(v) => setView(v as 'tower' | 'modules')} />
+      </div>
       {view === 'modules' ? <HomeDashboard embedded /> : (
         <div className="g2-stack" style={{ gap: 16 }}>
-          <div className="g2-row" style={{ gap: 12, flexWrap: 'wrap' }}>
-            <span className="g2-small g2-muted">View as</span>
-            <Segmented options={LENSES.map((l) => ({ id: l.id, label: l.label }))} value={lens} onChange={(v) => setLens(v as Lens)} />
-            <span className="g2-spacer" />
-            {critical > 0 && <Badge tone="red" dot>{critical} critical</Badge>}
-            <span className="g2-small g2-muted"><Clock size={12} style={{ verticalAlign: -2 }} /> Live as of {new Date().toTimeString().slice(0, 5)}</span>
+          {/* KPI row */}
+          <div className="ct-kpis">
+            {kpis.map((x) => <KpiCard key={x.key} label={x.label} value={x.value} foot={x.foot} icon={x.icon} color={x.color} bg={x.bg} onClick={() => navigate(x.path)} />)}
           </div>
 
-          {/* Where money is stuck */}
-          <Card title={<span className="g2-row" style={{ gap: 8 }}><IndianRupee size={16} /> Where money is stuck <Badge tone={atRisk ? 'red' : 'green'}>{inr(atRisk)}</Badge></span>} subtitle="Value held up right now — click any figure for the records">
-            {money.length === 0 ? <div className="g2-small g2-muted">Nothing stuck for this view.</div> : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
-                {money.map((m) => (
-                  <button key={m.key} type="button" onClick={() => navigate(m.path)} className="ct-money" style={{ borderLeft: `4px solid ${m.tone === 'red' ? '#dc2626' : m.tone === 'amber' ? '#d97706' : '#059669'}` }}>
-                    <div className="g2-small g2-muted">{m.label}</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: m.tone === 'red' ? '#b91c1c' : m.tone === 'amber' ? '#b45309' : '#047857' }}>{inr(m.value)}</div>
-                    {m.units && <div className="g2-small" style={{ fontWeight: 600 }}>{m.units}</div>}
-                    <div className="g2-small g2-muted" style={{ marginTop: 2 }}>{m.foot}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </Card>
+          {/* Charts */}
+          {(enabled('secondary') || enabled('orders')) && (
+            <div className="ct-charts">
+              <Card title={hasDaily ? brandTitle : 'Sell-in vs sell-out by month'} subtitle={hasDaily ? undefined : 'No dated partner sales in the last 30 days yet — showing the monthly trend'}>
+                <div style={{ height: 250 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    {hasDaily && !d.daily ? (
+                      <BarChart data={d.byBrand} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke="#eef1f6" vertical={false} />
+                        <XAxis dataKey="day" tickLine={false} fontSize={11} />
+                        <YAxis tickFormatter={fmtAxis} width={64} fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip formatter={(v) => inr(Number(v))} />
+                        <Legend iconType="square" wrapperStyle={{ fontSize: 12 }} />
+                        {d.brands.map((b, i) => <Bar key={b} dataKey={b} stackId="1" fill={BRAND_COLORS[i % 5]} maxBarSize={56} radius={i === d.brands.length - 1 ? [3, 3, 0, 0] : undefined} />)}
+                      </BarChart>
+                    ) : hasDaily ? (
+                      <AreaChart data={d.byBrand} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke="#eef1f6" vertical={false} />
+                        <XAxis dataKey="day" tickLine={false} fontSize={11} interval={d.daily ? 4 : 0} />
+                        <YAxis tickFormatter={fmtAxis} width={64} fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip formatter={(v) => inr(Number(v))} />
+                        <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
+                        {d.brands.map((b, i) => <Area key={b} type="monotone" dataKey={b} stackId="1" stroke={BRAND_COLORS[i % 5]} fill={BRAND_COLORS[i % 5]} fillOpacity={0.18} strokeWidth={1.8} />)}
+                      </AreaChart>
+                    ) : (
+                      <ComposedChart data={d.trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke="#eef1f6" vertical={false} />
+                        <XAxis dataKey="month" tickLine={false} fontSize={11} />
+                        <YAxis tickFormatter={fmtAxis} width={64} fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip formatter={(v) => inr(Number(v))} />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        {enabled('orders') && <Bar dataKey="primary" name="Primary (sell-in)" fill="#1e3a8a" radius={[3, 3, 0, 0]} />}
+                        {enabled('secondary') && <Line dataKey="secondary" name="Secondary (sell-out)" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3 }} />}
+                      </ComposedChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+              <Card title="Primary vs secondary by zone" subtitle="Last 30 days">
+                <div style={{ height: 250 }}>
+                  {d.byZone.length === 0 ? <div className="g2-small g2-muted">No orders or partner sales in the last 30 days.</div> : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={d.byZone} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke="#eef1f6" vertical={false} />
+                        <XAxis dataKey="zone" tickLine={false} fontSize={11} />
+                        <YAxis tickFormatter={fmtAxis} width={60} fontSize={11} tickLine={false} axisLine={false} />
+                        <Tooltip formatter={(v) => inr(Number(v))} />
+                        <Legend iconType="square" wrapperStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="primary" name="Primary" fill="#0f1a33" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="secondary" name="Secondary" fill="#2563eb" radius={[2, 2, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {/* Exception cards */}
+          {cards.length === 0 ? <Card><div className="g2-small g2-muted">Nothing needs action for this view.</div></Card> : (
+            <div className="ct-cards">
+              {cards.map((c) => (
+                <div key={c.key} className="ct-card">
+                  <div className="ct-card-h" style={{ backgroundImage: `linear-gradient(90deg, ${TINT[c.tint].bg}, #fff)` }}>
+                    <span style={{ color: TINT[c.tint].c, display: 'flex' }}>{c.icon}</span>
+                    <h3>{c.title}</h3>
+                    <span className="ct-pill" style={{ background: TINT[c.tint].bg, color: TINT[c.tint].c }}>{c.count}</span>
+                    <span className="g2-spacer" />
+                    <button type="button" className="ct-open" onClick={() => navigate(c.path)}>Open <ArrowRight size={13} /></button>
+                  </div>
+                  {c.rows.slice(0, 3).map((r, i) => (
+                    <div key={i} className="ct-row" onClick={() => navigate(r.path ?? c.path)}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="ct-main">{r.main}</div>
+                        {r.pct !== undefined ? <div className="ct-bar"><div style={{ width: `${Math.min(100, r.pct)}%`, background: r.pct >= 100 ? '#dc3545' : '#f59e0b' }} /></div>
+                          : r.sub && <div className="ct-sub">{r.sub}</div>}
+                      </div>
+                      {r.pill && (r.plain ? <span className="ct-amt" style={{ color: '#dc3545' }}>{r.pill}</span> : <span className={`ct-pill ct-${r.tone ?? 'slate'}`}>{r.pill}</span>)}
+                    </div>
+                  ))}
+                  {c.rows.length > 3 && <div className="ct-more" onClick={() => navigate(c.path)}>+{c.rows.length - 3} more</div>}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Supply chain flow */}
-          <Card title={<span className="g2-row" style={{ gap: 8 }}><Boxes size={16} /> Supply chain, end to end</span>} subtitle="Green — flowing · amber — watch · red — act now. Click a stage to open it.">
+          <Card title={<span className="g2-row" style={{ gap: 8 }}><Radar size={16} /> Supply chain, end to end</span>} subtitle="Green — flowing · amber — watch · red — act now. Click a stage to open it.">
             <div className="ct-flow">
               {d.nodes.map((n, i) => (
                 <React.Fragment key={n.key}>
@@ -319,80 +523,60 @@ const ControlTower: React.FC = () => {
                   <div role="button" tabIndex={0} className="ct-node" onClick={() => navigate(n.path)} onKeyDown={(e) => { if (e.key === 'Enter') navigate(n.path); }} style={{ background: HEALTH[n.health].bg, borderColor: HEALTH[n.health].b }}>
                     <div className="g2-row" style={{ gap: 6, color: HEALTH[n.health].c }}>{n.icon}<strong style={{ fontSize: 13 }}>{n.title}</strong><span className="ct-dot" style={{ background: HEALTH[n.health].c }} /></div>
                     <div style={{ fontWeight: 700, fontSize: 14, marginTop: 6, lineHeight: 1.3 }}>{n.main}</div>
-                    {n.lines.map((l, k) => <div key={k} className="g2-small" style={{ color: l.tone === 'red' ? '#b91c1c' : l.tone === 'amber' ? '#b45309' : l.tone === 'blue' ? '#1d4ed8' : '#4b5563', fontWeight: l.tone ? 600 : undefined }}>{l.text}</div>)}
+                    {n.lines.map((l, j) => <div key={j} className="g2-small" style={{ color: l.tone === 'red' ? '#b91c1c' : l.tone === 'amber' ? '#b45309' : l.tone === 'blue' ? '#1d4ed8' : '#4b5563', fontWeight: l.tone ? 600 : undefined }}>{l.text}</div>)}
                   </div>
                 </React.Fragment>
               ))}
             </div>
           </Card>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-            {/* Exceptions */}
-            <Card title={<span className="g2-row" style={{ gap: 8 }}><AlertOctagon size={16} /> Exceptions</span>} subtitle={exs.length ? `${exs.length} open · worst first` : 'All clear for this view'} flush>
-              {exs.length === 0 && <div className="g2-small g2-muted" style={{ padding: 16 }}>Nothing needs action.</div>}
-              <div>
-                {exs.map((e) => (
-                  <div key={e.key} className="ct-ex" onClick={() => navigate(e.path)}>
-                    <Badge tone={SEV[e.sev].tone}>{SEV[e.sev].label}</Badge>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{e.count} · {e.text}{e.value ? <span style={{ color: '#b91c1c', fontWeight: 600 }}> · {inr(e.value)}</span> : null}</div>
-                      {e.detail && <div className="g2-small g2-muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.detail}</div>}
-                    </div>
-                    <span className="g2-small g2-muted" style={{ whiteSpace: 'nowrap' }}>{e.owner}</span>
-                    <ArrowRight size={14} className="g2-muted" />
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* Partner watchlist */}
-            <Card title={<span className="g2-row" style={{ gap: 8 }}><Building2 size={16} /> Partners needing action</span>} subtitle="Stock-out risk, overdue money, licences, reporting" flush>
-              {d.watch.length === 0 && <div className="g2-small g2-muted" style={{ padding: 16 }}>Every partner is in good shape.</div>}
+          {/* Partner watchlist */}
+          {d.watch.length > 0 && (
+            <Card title={<span className="g2-row" style={{ gap: 8 }}><Building2 size={16} /> Partners needing action</span>} subtitle="Stock-out risk, overdue money, licences, reporting — worst first" flush>
               <div className="g2-table-wrap"><table className="g2-table">
-                <thead><tr><th>Partner</th><th>Why</th><th style={{ textAlign: 'right' }}>Cover</th><th style={{ textAlign: 'right' }}>Data</th></tr></thead>
+                <thead><tr><th>Partner</th><th>Why</th><th style={{ textAlign: 'right' }}>Shortest cover</th><th style={{ textAlign: 'right' }}>Overdue</th><th style={{ textAlign: 'right' }}>Data</th></tr></thead>
                 <tbody>{d.watch.slice(0, 8).map((w) => (
                   <tr key={w.partnerId} style={{ cursor: 'pointer' }} onClick={() => navigate(`/secondary?partner=${w.partnerId}`)}>
                     <td style={{ fontWeight: 600 }}>{w.name}</td>
                     <td><div className="g2-row" style={{ gap: 4, flexWrap: 'wrap' }}>{w.flags.map((f) => <Badge key={f.text} tone={f.tone}>{f.text}</Badge>)}</div></td>
                     <td style={{ textAlign: 'right', color: w.cover !== null && w.cover < 14 ? '#b91c1c' : undefined, fontWeight: w.cover !== null && w.cover < 14 ? 700 : undefined }}>{w.cover === null ? '—' : `${w.cover} d`}</td>
+                    <td style={{ textAlign: 'right' }}>{w.overdue ? inr(w.overdue) : '—'}</td>
                     <td style={{ textAlign: 'right' }} className="g2-small">{w.dataAge === null ? <span className="g2-muted">none</span> : <span style={{ color: w.fresh ? '#047857' : '#b45309' }}>{w.dataAge === 0 ? 'today' : `${w.dataAge} d`}</span>}</td>
                   </tr>
                 ))}</tbody>
               </table></div>
             </Card>
-          </div>
-
-          {/* Trend */}
-          {(enabled('orders') || enabled('secondary')) && (
-            <Card title="Sell-in vs sell-out by month" subtitle="Primary = your orders to partners. Secondary = partners’ reported sales to hospitals and customers. A widening gap means stock piling up in the channel.">
-              <div style={{ height: 240 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={d.trend} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="month" tickLine={false} fontSize={12} />
-                    <YAxis tickFormatter={(v: number) => inr(v)} width={70} fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip formatter={(v) => inr(Number(v))} />
-                    <Legend />
-                    {enabled('orders') && <Bar dataKey="primary" name="Primary (sell-in)" fill="#6d28d9" radius={[4, 4, 0, 0]} />}
-                    {enabled('secondary') && <Line dataKey="secondary" name="Secondary (sell-out)" stroke="#059669" strokeWidth={2.5} dot={{ r: 3 }} />}
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
           )}
         </div>
       )}
       <style>{`
-        .ct-money{all:unset;cursor:pointer;display:flex;flex-direction:column;justify-content:flex-start;box-sizing:border-box;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;transition:box-shadow .15s}
-        .ct-money:hover{box-shadow:0 2px 10px rgba(0,0,0,.07)}
+        .ct-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+        .ct-kpis .g2-kpi-value{font-size:21px}
+        .ct-charts{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px}
+        .ct-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+        .ct-card{background:#fff;border:1px solid #e4e8f0;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);overflow:hidden;display:flex;flex-direction:column}
+        .ct-card-h{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid #eef1f6}
+        .ct-card-h h3{margin:0;font-size:14px;font-weight:600;color:#0f1a33}
+        .ct-open{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;color:#2563eb;padding:4px 6px;border-radius:6px}
+        .ct-open:hover{background:#eaf1ff}
+        .ct-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid #f3f5f9;cursor:pointer}
+        .ct-row:first-of-type{border-top:0}
+        .ct-row:hover{background:#fafbfd}
+        .ct-main{font-weight:600;font-size:13px;color:#0f1a33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .ct-sub{font-size:12px;color:#6b7590;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+        .ct-pill{font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap}
+        .ct-red{background:#fdecee;color:#dc3545}.ct-amber{background:#fff5e0;color:#c77700}.ct-blue{background:#eaf1ff;color:#2563eb}.ct-green{background:#e7f7ee;color:#15803d}.ct-purple{background:#f1ebfd;color:#7c3aed}.ct-slate{background:#f1f3f7;color:#55607a}
+        .ct-amt{font-size:13px;font-weight:700;white-space:nowrap}
+        .ct-bar{height:6px;background:#f1f3f7;border-radius:4px;margin-top:6px;overflow:hidden}.ct-bar>div{height:100%;border-radius:4px}
+        .ct-more{padding:8px 16px;font-size:12px;color:#2563eb;cursor:pointer;border-top:1px solid #f3f5f9;margin-top:auto}
         .ct-flow{display:flex;align-items:stretch;gap:4px;overflow-x:auto;padding-bottom:4px}
         .ct-node{position:relative;cursor:pointer;display:block;padding-right:22px !important;flex:1 1 0;min-width:128px;border:1px solid;border-radius:10px;padding:10px 12px;box-sizing:border-box;transition:transform .12s;text-align:left;vertical-align:top}
         .ct-node:hover{transform:translateY(-2px)}
         .ct-arrow{display:flex;align-items:center;color:#9ca3af;flex:0 0 auto}
         .ct-dot{position:absolute;top:12px;right:12px;width:8px;height:8px;border-radius:50%}
-        .ct-ex{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid #f1f2f4;cursor:pointer}
-        .ct-ex:hover{background:#fafafa}
-        @media (max-width: 900px){ .ct-flow{flex-direction:column} .ct-arrow{transform:rotate(90deg);justify-content:center} }
+        @media (max-width: 1280px){ .ct-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
+        @media (max-width: 1100px){ .ct-charts{grid-template-columns:1fr} .ct-cards{grid-template-columns:repeat(2,minmax(0,1fr))} }
+        @media (max-width: 760px){ .ct-lens .g2-seg{flex-wrap:wrap;max-width:100%} .ct-kpis,.ct-cards{grid-template-columns:1fr} .ct-flow{flex-direction:column} .ct-arrow{transform:rotate(90deg);justify-content:center} }
       `}</style>
     </div>
   );

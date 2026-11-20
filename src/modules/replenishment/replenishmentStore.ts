@@ -14,7 +14,8 @@ import { emit } from '../../platform/events';
 import { issueLink, revokeLinks } from '../../platform/actionLinks';
 import type { Product } from '../../types/product.ts';
 import { OPEN, createOrder, getOrder, inTransit, orders } from '../orders/orderStore';
-import type { OrderCtx } from '../orders/orderStore';
+import type { Check, Order, OrderCtx } from '../orders/orderStore';
+import { optChoice } from '../../platform/moduleOptions';
 import { priceLine, shipFromFor } from '../orders/intake';
 import { FRESH_DAYS, accept as acceptReport, consentAllows, daysIn, getReport, openingOf, partnerBoard, receiptsOf, reports, setupOf, submitReport, thisPeriod } from '../secondary/secondaryStore';
 import type { LocType } from '../inventory/stockStore';
@@ -275,4 +276,27 @@ export const ensureReplenishmentDemo = (principalId: string, partners: { id: str
   const r = submitReport({ principalId, partnerId: target.id, partnerName: target.name, locType: target.locType, period, route: setup.route, system: setup.system, lines }, products, 'System');
   const rep = r.id ? getReport(r.id) : null;
   if (rep && rep.status === 'Needs review') acceptReport(rep.id, 'System', 'Month-to-date update');
+};
+
+/**
+ * DMS stock-norm check: an order that would take the partner above the norm (days of stock at its current daily sales)
+ * is held for approval. Needs the partner's reported stock and sales; without them the check is skipped.
+ */
+export const stockNormCheck = (o: Order, ctx: OrderCtx): Check | null => {
+  const max = optChoice('orders', 'stockNorm'); if (max === 'off' || ['Cancelled', 'Rejected', 'Completed'].includes(o.status)) return null;
+  const p = ctx.partners.find((x) => x.id === o.partnerId); if (!p || p.institution) return null;
+  const sg = suggest(o.principalId, [{ id: p.id, name: p.name, partnerTypeId: p.partnerTypeId }], ctx.products)[0];
+  if (!sg?.ok) return null;
+  const lim = Number(max);
+  const rows = o.lines.map((l) => {
+    const r = sg.rows.find((x) => x.productId === l.productId);
+    if (!r || !(r.avgDaily > 0)) return null;
+    const before = Math.round((r.stock + r.transit) / r.avgDaily); const after = Math.round((r.stock + r.transit + l.qty) / r.avgDaily);
+    return { name: l.name, before, after };
+  }).filter((x): x is { name: string; before: number; after: number } => !!x);
+  if (!rows.length) return { id: 'stock-norm', label: 'Stock norm', state: 'pass', detail: 'No sales history for these products at the partner yet' };
+  const over = rows.filter((x) => x.after > lim);
+  return over.length
+    ? { id: 'stock-norm', label: 'Stock norm', state: 'hold', detail: over.map((x) => `${x.name.slice(0, 40)}: ${x.before} → ${x.after} days (norm ${lim})`).join('; ') }
+    : { id: 'stock-norm', label: 'Stock norm', state: 'pass', detail: `Within ${lim} days of stock after this order (max ${Math.max(...rows.map((x) => x.after))} days)` };
 };

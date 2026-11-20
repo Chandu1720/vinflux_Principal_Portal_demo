@@ -39,8 +39,23 @@ export interface PartnerSetup { partnerId: string; route: Route; system: string;
  * granted, until the date granted. Withdrawal stops new data at once; data received before stays (audit).
  */
 export type ConsentStatus = 'Not requested' | 'Requested' | 'Granted' | 'Declined' | 'Withdrawn' | 'Expired';
-export interface ConsentScopes { stock: boolean; sales: boolean; cases: boolean }
-export const SCOPE_LABEL: Record<keyof ConsentScopes, string> = { stock: 'Stock of your products', sales: 'Sales of your products', cases: 'Surgery case usage and implants' };
+/** The kinds of data a distributor can share with one principal (DMS consent). Only this principal's brands, never other principals'. */
+export interface ConsentScopes { catalogue: boolean; orders: boolean; sales: boolean; stock: boolean; claims: boolean; cases: boolean }
+export type ConsentScope = keyof ConsentScopes;
+export const SCOPE_ORDER: ConsentScope[] = ['catalogue', 'orders', 'sales', 'stock', 'claims', 'cases'];
+export const SCOPE_LABEL: Record<ConsentScope, string> = { catalogue: 'Catalogue & price lists', orders: 'Primary orders', sales: 'Secondary sales', stock: 'Stock', claims: 'Claims', cases: 'Surgery case usage' };
+export const SCOPE_HINT: Record<ConsentScope, string> = {
+  catalogue: 'Your products, MRP and their price tier only — published into their VinFlux',
+  orders: 'Orders they place on you, your invoices and their goods receipts',
+  sales: 'Sell-out of your products by product, customer type and town',
+  stock: 'Stock of your products by batch and expiry',
+  claims: 'Claims they raise on you, with proofs',
+  cases: 'Implants used in surgeries they serve',
+};
+/** Enforced by the platform for every link, whatever the agreement says. */
+export const NEVER_SHARED = ['Other principals’ products, sales and stock', 'Their margins and purchase prices of other brands', 'Their cash, bank balances and collections', 'Other principals’ schemes and claims', 'Customer identity beyond what they choose (masked by default)'];
+export const ALL_SCOPES: ConsentScopes = { catalogue: true, orders: true, sales: true, stock: true, claims: true, cases: true };
+export interface AccessEntry { at: string; who: string; what: string; partnerId: string }
 export interface Consent {
   partnerId: string; status: ConsentStatus; requested: ConsentScopes; granted: ConsentScopes; identity: Sharing; validUntil: string | null;
   lastSyncAt: string | null; history: { at: string; by: string; action: string; note?: string }[];
@@ -72,7 +87,7 @@ export const ageDays = (iso: string) => Math.max(0, Math.floor((Date.now() - Dat
 
 /* ------------------------------------ Store ------------------------------------ */
 
-interface Db { reports: SecondaryReport[]; setups: Record<string, PartnerSetup>; consents?: Record<string, Consent>; platformDemo?: boolean; itemMap: Record<string, Record<string, string>>; settings: SecSettings; seq: number }
+interface Db { reports: SecondaryReport[]; setups: Record<string, PartnerSetup>; consents?: Record<string, Consent>; access?: AccessEntry[]; platformDemo?: boolean; itemMap: Record<string, Record<string, string>>; settings: SecSettings; seq: number }
 const KEY = () => workspaceKey('vinflux.secondary.v1');
 let cache: { key: string; d: Db } | null = null;
 const listeners = new Set<() => void>();
@@ -80,7 +95,18 @@ const db = (): Db => { if (!cache || cache.key !== KEY()) cache = { key: KEY(), 
 const commit = (d: Db) => { cache = { key: KEY(), d }; saveJson(KEY(), d); listeners.forEach((l) => l()); };
 export const subscribeSecondary = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 
-export const reports = (principalId: string) => db().reports.filter((r) => r.principalId === principalId);
+/** Every report, including data from distributors who have since withdrawn consent (audit only). */
+export const allReports = (principalId: string) => db().reports.filter((r) => r.principalId === principalId);
+/**
+ * Reports used by every screen and figure. Data that came from the distributor platform disappears from them as soon
+ * as the distributor withdraws that kind of data; it stays in allReports() for the audit trail.
+ */
+export const reports = (principalId: string) => db().reports.filter((r) => {
+  if (r.principalId !== principalId) return false;
+  if (r.route !== 'vinflux' || !db().setups[r.partnerId]?.onPlatform) return true;
+  return consentAllows(r.partnerId, 'sales') || consentAllows(r.partnerId, 'stock');
+}).map((r) => (r.route === 'vinflux' && db().setups[r.partnerId]?.onPlatform && !(consentAllows(r.partnerId, 'sales') && consentAllows(r.partnerId, 'stock'))
+  ? { ...r, sales: consentAllows(r.partnerId, 'sales') ? r.sales : [], stock: consentAllows(r.partnerId, 'stock') ? r.stock : [] } : r));
 export const getReport = (id: string) => db().reports.find((r) => r.id === id) ?? null;
 export const secSettings = () => db().settings;
 export const saveSecSettings = (s: SecSettings) => commit({ ...db(), settings: s });
@@ -90,13 +116,14 @@ export const setupOf = (partnerId: string): PartnerSetup => {
   return s.onPlatform ? { ...s, route: 'vinflux', system: 'VinFlux', cadence: 'live', sharing: consentOf(partnerId).identity } : s;
 };
 
-const NO_SCOPES: ConsentScopes = { stock: false, sales: false, cases: false };
+const NO_SCOPES: ConsentScopes = { catalogue: false, orders: false, sales: false, stock: false, claims: false, cases: false };
 export const consentOf = (partnerId: string): Consent => {
-  const c = db().consents?.[partnerId] ?? { partnerId, status: 'Not requested' as ConsentStatus, requested: NO_SCOPES, granted: NO_SCOPES, identity: 'masked' as Sharing, validUntil: null, lastSyncAt: null, history: [] };
+  const raw = db().consents?.[partnerId] ?? { partnerId, status: 'Not requested' as ConsentStatus, requested: NO_SCOPES, granted: NO_SCOPES, identity: 'masked' as Sharing, validUntil: null, lastSyncAt: null, history: [] };
+  const c = { ...raw, requested: { ...NO_SCOPES, ...raw.requested }, granted: { ...NO_SCOPES, ...raw.granted } };
   return c.status === 'Granted' && c.validUntil && c.validUntil < now().slice(0, 10) ? { ...c, status: 'Expired', granted: NO_SCOPES } : c;
 };
 /** Data of this kind may flow from the distributor's VinFlux account right now. */
-export const consentAllows = (partnerId: string, scope: keyof ConsentScopes) => { const c = consentOf(partnerId); return c.status === 'Granted' && c.granted[scope]; };
+export const consentAllows = (partnerId: string, scope: ConsentScope) => { const c = consentOf(partnerId); return c.status === 'Granted' && c.granted[scope]; };
 /** Partner-run surgery cases are visible only with case consent when the partner is on the platform. */
 export const caseUsageAllowed = (partnerId: string | null) => !partnerId || !db().setups[partnerId]?.onPlatform || consentAllows(partnerId, 'cases');
 const putConsent = (c: Consent, by: string, action: string, note?: string) => commit({ ...db(), consents: { ...(db().consents ?? {}), [c.partnerId]: { ...c, history: [...c.history, { at: now(), by, action, note }] } } });
@@ -114,7 +141,7 @@ export const respondConsent = (partnerId: string, grant: boolean, by: string, sc
   if (c.status !== 'Requested') return { ok: false, message: 'No request is waiting.' };
   if (!grant) { putConsent({ ...c, status: 'Declined', granted: NO_SCOPES }, by, 'Declined by the distributor'); return { ok: true, message: 'The distributor declined — no data will flow.' }; }
   const g = scopes ?? c.requested;
-  const granted = { stock: c.requested.stock && g.stock, sales: c.requested.sales && g.sales, cases: c.requested.cases && g.cases };
+  const granted = Object.fromEntries(SCOPE_ORDER.map((k) => [k, !!(c.requested[k] && g[k])])) as unknown as ConsentScopes;
   putConsent({ ...c, status: 'Granted', granted, identity, validUntil }, by, 'Granted by the distributor', `${Object.entries(granted).filter(([, v]) => v).map(([k]) => SCOPE_LABEL[k as keyof ConsentScopes]).join(', ')} · customers: ${SHARING_LABEL[identity]}${validUntil ? ` · until ${validUntil}` : ''}`);
   return { ok: true, message: 'Consent granted — data starts flowing.' };
 };
@@ -124,6 +151,23 @@ export const withdrawConsent = (partnerId: string, by: string) => {
   putConsent({ ...c, status: 'Withdrawn', granted: NO_SCOPES }, by, 'Withdrawn by the distributor', 'No new data flows; data received before stays for audit');
   return { ok: true, message: 'Consent withdrawn — the live feed has stopped.' };
 };
+/** The distributor turns one kind of data on or off from their VinFlux account (simulated in this demo). */
+export const setScope = (partnerId: string, scope: ConsentScope, on: boolean, by: string) => {
+  const c = consentOf(partnerId);
+  if (c.status !== 'Granted' && !(on && ['Withdrawn', 'Declined', 'Expired'].includes(c.status))) return { ok: false, message: 'Consent has to be granted first.' };
+  const granted = { ...c.granted, [scope]: on }; const requested = { ...c.requested, [scope]: c.requested[scope] || on };
+  const any = SCOPE_ORDER.some((k) => granted[k]);
+  putConsent({ ...c, status: any ? 'Granted' : 'Withdrawn', requested, granted }, by, `${SCOPE_LABEL[scope]} ${on ? 'shared' : 'withdrawn'} by the distributor`, on ? undefined : 'Hidden from every screen now; kept in the audit trail');
+  emit('consent.changed', 'Secondary Sales', by, `${SCOPE_LABEL[scope]} ${on ? 'shared' : 'withdrawn'}`, { partnerId, scope, on });
+  return { ok: true, message: `${SCOPE_LABEL[scope]} ${on ? 'now shared' : 'withdrawn — removed from your screens'}.` };
+};
+/** Who on the principal's side looked at a distributor's shared data (shown to the distributor too). */
+export const logAccess = (partnerId: string, what: string, who: string) => {
+  const d = db(); const list = d.access ?? [];
+  if (list.some((a) => a.partnerId === partnerId && a.who === who && a.what === what && Date.now() - Date.parse(a.at) < 10 * 60000)) return;
+  cache = { key: KEY(), d: { ...d, access: [{ at: now(), who, what, partnerId }, ...list].slice(0, 300) } }; saveJson(KEY(), cache.d);
+};
+export const accessLog = (partnerIds?: string[]) => (db().access ?? []).filter((a) => !partnerIds || partnerIds.includes(a.partnerId));
 export const saveSetup = (s: PartnerSetup) => commit({ ...db(), setups: { ...db().setups, [s.partnerId]: s } });
 export const itemMapOf = (partnerId: string) => db().itemMap[partnerId] ?? {};
 
@@ -416,8 +460,8 @@ export const ensurePlatformDemo = (principalId: string, partners: { id: string; 
   cache = { key: KEY(), d: { ...d, platformDemo: true } }; saveJson(KEY(), cache.d);
   const [a, b] = [partners[3], partners[4]];
   setOnPlatform(a.id, true); setOnPlatform(b.id, true);
-  requestConsent(a.id, { stock: true, sales: true, cases: true }, 'Ravi Kumar');
-  respondConsent(a.id, true, `${a.name} (owner)`, { stock: true, sales: true, cases: false }, 'masked', `${new Date().getUTCFullYear() + 1}-03-31`);
-  requestConsent(b.id, { stock: true, sales: true, cases: false }, 'Ravi Kumar');
+  requestConsent(a.id, ALL_SCOPES, 'Ravi Kumar');
+  respondConsent(a.id, true, `${a.name} (owner)`, { ...ALL_SCOPES, cases: false }, 'masked', `${new Date().getUTCFullYear() + 1}-03-31`);
+  requestConsent(b.id, { ...ALL_SCOPES, cases: false }, 'Ravi Kumar');
   syncFromPlatform(principalId, a, products, 'VinFlux platform');
 };

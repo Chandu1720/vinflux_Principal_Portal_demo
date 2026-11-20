@@ -23,7 +23,7 @@ import type { Basis, Scorecard, Target as Tgt, TargetScope, Weights } from './pe
 const inr = (n: number) => (n >= 10000000 ? `₹${(n / 10000000).toFixed(2)} Cr` : n >= 100000 ? `₹${(n / 100000).toFixed(1)} L` : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const GRADE: Record<Scorecard['grade'], BadgeTone> = { A: 'green', B: 'blue', C: 'amber', D: 'red', '—': 'slate' };
 const monthLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-const WEIGHT_LABEL: Record<keyof Weights, string> = { achievement: 'Target achievement', fill: 'Fill rate received', stock: 'Days of stock', expiry: 'Expired stock', payment: 'Payment discipline', data: 'Reporting on time', claims: 'Claim ratio' };
+const WEIGHT_LABEL: Record<keyof Weights, string> = { achievement: 'Target achievement', fill: 'Fill rate received', stock: 'Days of stock', expiry: 'Expired stock', payment: 'Payment discipline', data: 'Reporting on time', claims: 'Claim ratio', coverage: 'Outlet coverage', accuracy: 'Claim accuracy' };
 
 const ScoreModal: React.FC<{ s: Scorecard; onClose: () => void }> = ({ s, onClose }) => (
   <Modal open size="lg" title={<span className="g2-row" style={{ gap: 8 }}>{s.name} <Badge tone={GRADE[s.grade]}>Grade {s.grade}</Badge></span>} subtitle={`Score ${s.score ?? '—'} / 100 · primary ${inr(s.primary)} · secondary ${inr(s.secondary)} this month`} onClose={onClose}>

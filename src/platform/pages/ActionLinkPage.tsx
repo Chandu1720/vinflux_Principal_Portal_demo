@@ -11,7 +11,7 @@ import { roles, users } from '../../modules/users/userStore';
 import { useApp } from '../../context/AppContext.tsx';
 import { useOrderCtx } from '../../modules/orders/useOrderCtx';
 import { answerPartFill, approveOrder, getOrder, orderValue, rejectOrder } from '../../modules/orders/orderStore';
-import { decideClaim, getClaim, getScheme } from '../../modules/claims/claimsStore';
+import { VERIFIED_TYPES, decideClaim, getClaim, getScheme, isVirtual } from '../../modules/claims/claimsStore';
 import { acknowledgePO, getPO } from '../../modules/procurement/procurementStore';
 import { getProposal, respondProposal } from '../../modules/replenishment/replenishmentStore';
 import type { OrderCtx } from '../../modules/orders/orderStore';
@@ -174,7 +174,7 @@ const ActionLinkPage: React.FC = () => {
   const c = getClaim(link.refId); const s = c ? getScheme(c.schemeId) : null;
   if (!c || !s) return <Shell title="Claim not found"><Alert tone="warn">This claim was replaced (for example by the partner’s own claim for the same month) or removed. Use the latest message.</Alert></Shell>;
   const who = personFor(link.audience);
-  const verified = ['PER_UNIT', 'TARGET'].includes(s.type);
+  const verified = VERIFIED_TYPES.includes(s.type) || isVirtual(s.id);
   const amount = verified ? Math.min(c.claimedAmount, c.computedAmount) : c.claimedAmount;
   return (
     <Shell title={`Claim ${c.no} — ${c.partnerName}`}>

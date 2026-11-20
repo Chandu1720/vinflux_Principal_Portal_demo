@@ -70,6 +70,7 @@ export const MODULE_OPTIONS: Partial<Record<ModuleId, OptionDef[]>> = {
     { key: 'invoicing', label: 'Who issues the tax invoice', type: 'choice', default: 'erp', choices: [{ value: 'erp', label: 'Our ERP (VinFlux records the number)' }, { value: 'vinflux', label: 'VinFlux' }] },
     { key: 'creditCheck', label: 'Credit check on orders', type: 'choice', default: 'block', choices: [{ value: 'block', label: 'Block' }, { value: 'warn', label: 'Warn only' }, { value: 'off', label: 'Off' }] },
     { key: 'licenceCheck', label: 'Partner licence check', type: 'choice', default: 'block', choices: [{ value: 'block', label: 'Block' }, { value: 'warn', label: 'Warn only' }, { value: 'off', label: 'Off' }] },
+    { key: 'stockNorm', label: 'Stock-norm check (partner already holds enough)', help: 'Holds an order for approval when it would take the partner above this many days of stock, from its reported sales. Needs Secondary Sales.', type: 'choice', default: '45', choices: [{ value: '30', label: '30 days' }, { value: '45', label: '45 days' }, { value: '60', label: '60 days' }, { value: '90', label: '90 days' }, { value: 'off', label: 'Off' }] },
   ],
   inventory: [
     { key: 'partnerStock', label: 'Partner and hospital stock', help: 'Stock reported by distributors, dealers and consignment at hospitals.', type: 'bool', default: true },
